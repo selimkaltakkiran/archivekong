@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Workspace-local caches and duplicate checkout
+/.npm-cache/
+/video-library-tauri/
+
 # Rust / Tauri build artifacts and local Cargo cache
 src-tauri/target/
 .cargo-home/
