@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     fs,
@@ -8,10 +10,11 @@ use std::{
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use tauri::{Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
+
+mod dlna;
+mod lan_server;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct VideoDatabase {
@@ -60,12 +63,20 @@ struct ActorSocialLinks {
 struct AppSettings {
     thumbnail_frame_second: String,
     grid_size: String,
+    #[serde(default = "default_true")]
+    enable_lan_access: bool,
+    #[serde(default = "default_true")]
+    enable_dlna: bool,
     #[serde(default = "default_main_view_mode")]
     main_view_mode: String,
     #[serde(default = "default_font_size")]
     font_size: String,
     #[serde(default = "default_show_thumbnail_titles")]
     show_thumbnail_titles: bool,
+    #[serde(default)]
+    left_panel_tags: LeftPanelTags,
+    #[serde(default)]
+    right_panel_info: RightPanelInfo,
     #[serde(default)]
     hide_explicit_content: bool,
     #[serde(default)]
@@ -76,14 +87,124 @@ struct AppSettings {
     secondary_sort_mode: String,
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
+struct LeftPanelTags {
+    #[serde(default = "default_true")]
+    actors: bool,
+    #[serde(default = "default_true")]
+    directors: bool,
+    #[serde(default = "default_true")]
+    years: bool,
+    #[serde(default = "default_true")]
+    publishers: bool,
+    #[serde(default = "default_true")]
+    writers: bool,
+    #[serde(default = "default_true")]
+    genres: bool,
+    #[serde(default = "default_true")]
+    subgenres: bool,
+    #[serde(default = "default_true")]
+    ratings: bool,
+}
+
+impl Default for LeftPanelTags {
+    fn default() -> Self {
+        Self {
+            actors: true,
+            directors: true,
+            years: true,
+            publishers: true,
+            writers: true,
+            genres: true,
+            subgenres: true,
+            ratings: true,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct RightPanelInfo {
+    #[serde(default = "default_true")]
+    filename: bool,
+    #[serde(default = "default_true")]
+    file_path: bool,
+    #[serde(default = "default_true")]
+    actor: bool,
+    #[serde(default = "default_true")]
+    director: bool,
+    #[serde(default = "default_true")]
+    publisher: bool,
+    #[serde(default = "default_true")]
+    writers: bool,
+    #[serde(default = "default_true")]
+    title: bool,
+    #[serde(default = "default_true")]
+    genre: bool,
+    #[serde(default = "default_true")]
+    sub_genre: bool,
+    #[serde(default = "default_true")]
+    year: bool,
+    #[serde(default = "default_true")]
+    backup_date: bool,
+    #[serde(default = "default_true")]
+    backup_location: bool,
+    #[serde(default = "default_true")]
+    notes: bool,
+    #[serde(default = "default_true")]
+    explicit_content: bool,
+    #[serde(default = "default_true")]
+    rating: bool,
+    #[serde(default = "default_true")]
+    filesize: bool,
+    #[serde(default = "default_true")]
+    resolution: bool,
+    #[serde(default = "default_true")]
+    bitrate: bool,
+    #[serde(default = "default_true")]
+    play_count: bool,
+    #[serde(default = "default_true")]
+    artwork_thumbnail: bool,
+}
+
+impl Default for RightPanelInfo {
+    fn default() -> Self {
+        Self {
+            filename: true,
+            file_path: true,
+            actor: true,
+            director: true,
+            publisher: true,
+            writers: true,
+            title: true,
+            genre: true,
+            sub_genre: true,
+            year: true,
+            backup_date: true,
+            backup_location: true,
+            notes: true,
+            explicit_content: true,
+            rating: true,
+            filesize: true,
+            resolution: true,
+            bitrate: true,
+            play_count: true,
+            artwork_thumbnail: true,
+        }
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             thumbnail_frame_second: "1".to_string(),
             grid_size: "180".to_string(),
+            enable_lan_access: true,
+            enable_dlna: true,
             main_view_mode: default_main_view_mode(),
             font_size: default_font_size(),
             show_thumbnail_titles: default_show_thumbnail_titles(),
+            left_panel_tags: LeftPanelTags::default(),
+            right_panel_info: RightPanelInfo::default(),
             hide_explicit_content: false,
             explicit_content_password_hash: String::new(),
             sort_mode: default_sort_mode(),
@@ -93,6 +214,10 @@ impl Default for AppSettings {
 }
 
 fn default_show_thumbnail_titles() -> bool {
+    true
+}
+
+fn default_true() -> bool {
     true
 }
 
@@ -118,7 +243,15 @@ struct VideoFile {
     file_path: String,
     title: String,
     actor: String,
+    #[serde(default)]
+    director: String,
+    #[serde(default)]
+    publisher: String,
+    #[serde(default)]
+    writers: String,
     genre: String,
+    #[serde(default)]
+    sub_genre: String,
     date: String,
     #[serde(default)]
     backup_date: String,
@@ -222,7 +355,15 @@ struct BackupManifestVideo {
     zip_path: String,
     title: String,
     actor: String,
+    #[serde(default)]
+    director: String,
+    #[serde(default)]
+    publisher: String,
+    #[serde(default)]
+    writers: String,
     genre: String,
+    #[serde(default)]
+    sub_genre: String,
     date: String,
     filesize: u64,
 }
@@ -282,14 +423,28 @@ fn load_video_database(app: tauri::AppHandle) -> Result<Option<VideoDatabase>, S
 
     let json =
         fs::read_to_string(&path).map_err(|error| format!("Could not read database: {error}"))?;
+    let needs_sub_genre_migration = database_rows_missing_field(&json, "sub_genre");
     let mut database: VideoDatabase = serde_json::from_str(&json)
         .map_err(|error| format!("Could not parse database JSON: {error}"))?;
     let changed = normalize_database(&mut database);
-    if changed {
+    if changed || needs_sub_genre_migration {
         save_database(&app, &database)?;
     }
 
     Ok(Some(database))
+}
+
+fn database_rows_missing_field(json: &str, field: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|database| database.get("videos")?.as_array().cloned())
+        .is_some_and(|videos| {
+            videos.iter().any(|video| {
+                video
+                    .as_object()
+                    .is_some_and(|row| !row.contains_key(field))
+            })
+        })
 }
 
 #[tauri::command]
@@ -464,6 +619,24 @@ fn refresh_video_fields(
         &mut changes,
     );
     refresh_string_field(
+        "director",
+        &mut existing_video.director,
+        &scanned_video.director,
+        &mut changes,
+    );
+    refresh_string_field(
+        "publisher",
+        &mut existing_video.publisher,
+        &scanned_video.publisher,
+        &mut changes,
+    );
+    refresh_string_field(
+        "writers",
+        &mut existing_video.writers,
+        &scanned_video.writers,
+        &mut changes,
+    );
+    refresh_string_field(
         "genre",
         &mut existing_video.genre,
         &scanned_video.genre,
@@ -572,6 +745,18 @@ fn scan_folder(
                 .as_ref()
                 .and_then(|tag| tag.artist().map(str::to_string))
                 .unwrap_or_default();
+            let director = tag
+                .as_ref()
+                .and_then(|tag| read_freeform_tag(tag, "Director"))
+                .unwrap_or_default();
+            let publisher = tag
+                .as_ref()
+                .and_then(|tag| read_freeform_tag(tag, "Publisher"))
+                .unwrap_or_default();
+            let writers = tag
+                .as_ref()
+                .map(|tag| tag.composers().collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
             let genre = tag
                 .as_ref()
                 .and_then(|tag| tag.genre().map(str::to_string))
@@ -594,7 +779,11 @@ fn scan_folder(
                 file_path: file_path.clone(),
                 title,
                 actor,
+                director,
+                publisher,
+                writers,
                 genre,
+                sub_genre: String::new(),
                 date,
                 backup_date: String::new(),
                 backup_location: String::new(),
@@ -614,6 +803,30 @@ fn scan_folder(
     Ok(())
 }
 
+fn read_freeform_tag(tag: &mp4ameta::Tag, name: &'static str) -> Option<String> {
+    let ident = mp4ameta::FreeformIdent::new_static("com.apple.iTunes", name);
+    let value = tag.strings_of(&ident).next().map(str::to_string);
+    value
+}
+
+fn set_freeform_tag(tag: &mut mp4ameta::Tag, name: &'static str, value: &str) {
+    let ident = mp4ameta::FreeformIdent::new_static("com.apple.iTunes", name);
+    if value.trim().is_empty() {
+        tag.remove_data_of(&ident);
+    } else {
+        tag.set_data(ident, mp4ameta::Data::Utf8(value.trim().to_string()));
+    }
+}
+
+fn split_metadata_values(value: &str) -> Vec<String> {
+    value
+        .split([',', ';', '|'])
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn is_supported_video_extension(extension: &str) -> bool {
     matches!(
         extension.to_lowercase().as_str(),
@@ -625,9 +838,7 @@ fn is_supported_mp4_tag_extension(file_path: &str) -> bool {
     PathBuf::from(file_path)
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(extension.to_lowercase().as_str(), "mp4" | "m4v" | "mov")
-        })
+        .is_some_and(|extension| matches!(extension.to_lowercase().as_str(), "mp4" | "m4v" | "mov"))
 }
 
 #[tauri::command]
@@ -727,6 +938,16 @@ fn update_video_file_actor_tags(
                     tag.remove_artists();
                 } else {
                     tag.set_artist(actor.to_string());
+                }
+
+                set_freeform_tag(&mut tag, "Director", &video.director);
+                set_freeform_tag(&mut tag, "Publisher", &video.publisher);
+
+                let writers = split_metadata_values(&video.writers);
+                if writers.is_empty() {
+                    tag.remove_composers();
+                } else {
+                    tag.set_composers(writers);
                 }
 
                 let genre = video.genre.trim();
@@ -1130,7 +1351,11 @@ fn backup_videos(
             zip_path: internal_path,
             title: video.title.clone(),
             actor: video.actor.clone(),
+            director: video.director.clone(),
+            publisher: video.publisher.clone(),
+            writers: video.writers.clone(),
             genre: video.genre.clone(),
+            sub_genre: video.sub_genre.clone(),
             date: video.date.clone(),
             filesize: video.filesize,
         });
@@ -1603,10 +1828,24 @@ pub fn run() {
             preview_restore_backup,
             restore_backup,
             preview_organize_videos,
-            confirm_organize_videos
+            confirm_organize_videos,
+            lan_server_url
         ])
+        .setup(|app| {
+            let settings = load_app_settings(app.handle().clone()).unwrap_or_default();
+            lan_server::set_enabled(settings.enable_lan_access);
+            dlna::set_enabled(settings.enable_dlna);
+            lan_server::start(app.handle().clone());
+            dlna::start();
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn lan_server_url() -> String {
+    lan_server::public_url()
 }
 
 fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1651,9 +1890,13 @@ fn save_app_settings(
     app: tauri::AppHandle,
     thumbnail_frame_second: String,
     grid_size: String,
+    enable_lan_access: bool,
+    enable_dlna: bool,
     main_view_mode: String,
     font_size: String,
     show_thumbnail_titles: bool,
+    left_panel_tags: LeftPanelTags,
+    right_panel_info: RightPanelInfo,
     hide_explicit_content: bool,
     explicit_content_password_hash: String,
     sort_mode: String,
@@ -1662,14 +1905,20 @@ fn save_app_settings(
     let settings = AppSettings {
         thumbnail_frame_second,
         grid_size,
+        enable_lan_access,
+        enable_dlna,
         main_view_mode,
         font_size,
         show_thumbnail_titles,
+        left_panel_tags,
+        right_panel_info,
         hide_explicit_content,
         explicit_content_password_hash,
         sort_mode,
         secondary_sort_mode,
     };
+    lan_server::set_enabled(settings.enable_lan_access);
+    dlna::set_enabled(settings.enable_dlna);
     let path = settings_path(&app)?;
 
     if let Some(parent) = path.parent() {
@@ -1837,8 +2086,7 @@ fn read_rating_from_tag(tag: &mp4ameta::Tag) -> u64 {
 }
 
 fn set_video_rating_tag(tag: &mut mp4ameta::Tag, rating: u64) {
-    let rating_ident =
-        mp4ameta::FreeformIdent::new_static("com.video-library-tauri", "RATING");
+    let rating_ident = mp4ameta::FreeformIdent::new_static("com.video-library-tauri", "RATING");
 
     if rating == 0 {
         tag.remove_data_of(&rating_ident);
@@ -1975,7 +2223,11 @@ fn save_database(app: &tauri::AppHandle, database: &VideoDatabase) -> Result<(),
                 file_path: video.file_path.clone(),
                 title: video.title.clone(),
                 actor: video.actor.clone(),
+                director: video.director.clone(),
+                publisher: video.publisher.clone(),
+                writers: video.writers.clone(),
                 genre: video.genre.clone(),
+                sub_genre: video.sub_genre.clone(),
                 date: video.date.clone(),
                 backup_date: video.backup_date.clone(),
                 backup_location: video.backup_location.clone(),
@@ -2088,7 +2340,11 @@ fn update_video_metadata(
     file_path: String,
     title: String,
     actor: String,
+    director: String,
+    publisher: String,
+    writers: String,
     genre: String,
+    sub_genre: String,
     date: String,
     backup_date: String,
     backup_location: String,
@@ -2119,7 +2375,11 @@ fn update_video_metadata(
 
         video.title = title;
         video.actor = actor;
+        video.director = director;
+        video.publisher = publisher;
+        video.writers = writers;
         video.genre = genre;
+        video.sub_genre = sub_genre;
         video.date = date;
         video.backup_date = backup_date;
         video.backup_location = backup_location;
@@ -2132,7 +2392,11 @@ fn update_video_metadata(
             file_path: video.file_path.clone(),
             title: video.title.clone(),
             actor: video.actor.clone(),
+            director: video.director.clone(),
+            publisher: video.publisher.clone(),
+            writers: video.writers.clone(),
             genre: video.genre.clone(),
+            sub_genre: video.sub_genre.clone(),
             date: video.date.clone(),
             backup_date: video.backup_date.clone(),
             backup_location: video.backup_location.clone(),
@@ -2159,7 +2423,11 @@ fn update_multiple_video_metadata(
     file_paths: Vec<String>,
     title: Option<String>,
     actor: Option<String>,
+    director: Option<String>,
+    publisher: Option<String>,
+    writers: Option<String>,
     genre: Option<String>,
+    sub_genre: Option<String>,
     date: Option<String>,
     backup_date: Option<String>,
     backup_location: Option<String>,
@@ -2194,8 +2462,24 @@ fn update_multiple_video_metadata(
             video.actor = actor.clone();
         }
 
+        if let Some(director) = &director {
+            video.director = director.clone();
+        }
+
+        if let Some(publisher) = &publisher {
+            video.publisher = publisher.clone();
+        }
+
+        if let Some(writers) = &writers {
+            video.writers = writers.clone();
+        }
+
         if let Some(genre) = &genre {
             video.genre = genre.clone();
+        }
+
+        if let Some(sub_genre) = &sub_genre {
+            video.sub_genre = sub_genre.clone();
         }
 
         if let Some(date) = &date {

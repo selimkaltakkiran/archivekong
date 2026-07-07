@@ -17,7 +17,11 @@ type VideoFile = {
   file_path: string;
   title: string;
   actor: string;
+  director: string;
+  publisher: string;
+  writers: string;
   genre: string;
+  sub_genre: string;
   date: string;
   backup_date: string;
   backup_location: string;
@@ -60,20 +64,125 @@ type ActorSocialLinks = {
 type AppSettings = {
   thumbnail_frame_second: string;
   grid_size: string;
+  enable_lan_access?: boolean;
+  enable_dlna?: boolean;
   main_view_mode?: MainViewMode;
   font_size?: AppFontSize;
   show_thumbnail_titles?: boolean;
+  left_panel_tags?: LeftPanelTags;
+  right_panel_info?: RightPanelInfo;
   hide_explicit_content?: boolean;
   explicit_content_password_hash?: string;
   sort_mode?: SortMode;
   secondary_sort_mode?: SecondarySortMode;
 };
 
-type ViewMode = "all-videos" | "actors" | "genres" | "ratings" | "settings";
+type LeftPanelTags = {
+  actors: boolean;
+  directors: boolean;
+  years: boolean;
+  publishers: boolean;
+  writers: boolean;
+  genres: boolean;
+  subgenres: boolean;
+  ratings: boolean;
+};
+
+const defaultLeftPanelTags: LeftPanelTags = {
+  actors: true,
+  directors: true,
+  years: true,
+  publishers: true,
+  writers: true,
+  genres: true,
+  subgenres: true,
+  ratings: true,
+};
+
+type RightPanelInfo = {
+  filename: boolean;
+  file_path: boolean;
+  actor: boolean;
+  director: boolean;
+  publisher: boolean;
+  writers: boolean;
+  title: boolean;
+  genre: boolean;
+  sub_genre: boolean;
+  year: boolean;
+  backup_date: boolean;
+  backup_location: boolean;
+  notes: boolean;
+  explicit_content: boolean;
+  rating: boolean;
+  filesize: boolean;
+  resolution: boolean;
+  bitrate: boolean;
+  play_count: boolean;
+  artwork_thumbnail: boolean;
+};
+
+const defaultRightPanelInfo: RightPanelInfo = {
+  filename: true,
+  file_path: true,
+  actor: true,
+  director: true,
+  publisher: true,
+  writers: true,
+  title: true,
+  genre: true,
+  sub_genre: true,
+  year: true,
+  backup_date: true,
+  backup_location: true,
+  notes: true,
+  explicit_content: true,
+  rating: true,
+  filesize: true,
+  resolution: true,
+  bitrate: true,
+  play_count: true,
+  artwork_thumbnail: true,
+};
+
+const rightPanelInfoOptions = [
+  ["filename", "Filename"],
+  ["file_path", "File path"],
+  ["actor", "Actor"],
+  ["director", "Director"],
+  ["publisher", "Publisher"],
+  ["writers", "Writers"],
+  ["title", "Title"],
+  ["genre", "Genre"],
+  ["sub_genre", "Sub-genre"],
+  ["year", "Year"],
+  ["backup_date", "Backup date"],
+  ["backup_location", "Backup location"],
+  ["notes", "Notes"],
+  ["explicit_content", "Explicit content"],
+  ["rating", "Rating"],
+  ["filesize", "Filesize"],
+  ["resolution", "Resolution"],
+  ["bitrate", "Bitrate"],
+  ["play_count", "Play count"],
+  ["artwork_thumbnail", "Artwork/thumbnail"],
+] as const satisfies readonly (readonly [keyof RightPanelInfo, string])[];
+
+type ViewMode =
+  | "all-videos"
+  | "actors"
+  | "directors"
+  | "years"
+  | "publishers"
+  | "writers"
+  | "genres"
+  | "subgenres"
+  | "ratings"
+  | "settings";
 type MainViewMode = "grid" | "list";
 type AppFontSize = "small" | "medium" | "large";
 type FontSizeVars = CSSProperties & Record<`--${string}`, string>;
-type RightPanelMode = "video" | "actor" | "genre" | "rating";
+type RightPanelMode = "video" | "actor" | "genre" | "rating" | "metadata";
 type RightPanelDetailMode = "short" | "extended";
 type SortMode =
   | "name"
@@ -90,6 +199,7 @@ type ListSortKey =
   | "filename"
   | "actor"
   | "genre"
+  | "sub_genre"
   | "date"
   | "rating"
   | "play_count"
@@ -119,7 +229,11 @@ type ContextMenuState = {
 type VideoEditForm = {
   title: string;
   actor: string;
+  director: string;
+  publisher: string;
+  writers: string;
   genre: string;
+  sub_genre: string;
   date: string;
   backup_date: string;
   backup_location: string;
@@ -129,18 +243,86 @@ type VideoEditForm = {
   play_count: string;
 };
 
-type AutocompleteField = "actor" | "genre";
+type AutocompleteField =
+  | "actor"
+  | "director"
+  | "publisher"
+  | "writers"
+  | "genre"
+  | "sub_genre";
 
 type AutocompleteState = {
   field: AutocompleteField;
   activeIndex: number;
 } | null;
 
+type SearchFilterField =
+  | "title"
+  | "filename"
+  | "file_path"
+  | "actor"
+  | "director"
+  | "publisher"
+  | "writers"
+  | "genre"
+  | "sub_genre"
+  | "date"
+  | "year"
+  | "rating"
+  | "filesize"
+  | "resolution"
+  | "bitrate"
+  | "play_count"
+  | "added_at"
+  | "backup_date"
+  | "backup_location"
+  | "notes"
+  | "explicit_content";
+
+type SearchFilterChip = {
+  field: SearchFilterField;
+  value: string;
+};
+
+type SearchSuggestion = SearchFilterChip & {
+  label: string;
+};
+
+type SearchAutocompleteState = {
+  activeIndex: number;
+} | null;
+
+const searchFilterFieldLabels: Record<SearchFilterField, string> = {
+  title: "Title",
+  filename: "Filename",
+  file_path: "File path",
+  actor: "Actor",
+  director: "Director",
+  publisher: "Publisher",
+  writers: "Writer",
+  genre: "Genre",
+  sub_genre: "Sub-genre",
+  date: "Date",
+  year: "Year",
+  rating: "Rating",
+  filesize: "Filesize",
+  resolution: "Resolution",
+  bitrate: "Bitrate",
+  play_count: "Play count",
+  added_at: "Added",
+  backup_date: "Backup date",
+  backup_location: "Backup location",
+  notes: "Notes",
+  explicit_content: "Explicit",
+};
+
 type NavigationSnapshot = {
   activeView: ViewMode;
   selectedActor: string;
+  actorVideosActor: string;
   selectedGenre: string;
   selectedRating: number | null;
+  selectedMetadataGroup: string;
   selectedVideoPath: string;
   selectedVideoPaths: string[];
   rightPanelMode: RightPanelMode;
@@ -270,6 +452,13 @@ type VideoThumbnailResult = VideoTechnicalMetadata & {
 };
 
 const ORGANIZE_PATTERN = "{genre}\\{actor}";
+const AUTO_COLLAPSE_PANELS_QUERY = "(max-width: 900px)";
+const isLanBrowser =
+  typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
+
+function lanFileUrl(kind: "media" | "image", path: string) {
+  return `/api/${kind}?path=${encodeURIComponent(path)}`;
+}
 
 function App() {
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
@@ -291,13 +480,25 @@ function App() {
     useState<RightPanelDetailMode>("short");
   const [isRightPanelEditing, setIsRightPanelEditing] = useState(false);
   const [databasePath, setDatabasePath] = useState("");
+  const [lanServerUrl, setLanServerUrl] = useState(
+    isLanBrowser ? window.location.origin : "",
+  );
   const [selectedActor, setSelectedActor] = useState("");
+  const [actorVideosActor, setActorVideosActor] = useState("");
+  const [isActorModalOpen, setIsActorModalOpen] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState("");
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [selectedMetadataGroup, setSelectedMetadataGroup] = useState("");
   const [filterText, setFilterText] = useState("");
   const [actorFilter, setActorFilter] = useState("all");
   const [genreFilters, setGenreFilters] = useState<string[]>([]);
+  const [subGenreFilters, setSubGenreFilters] = useState<string[]>([]);
   const [ratingFilters, setRatingFilters] = useState<number[]>([]);
+  const [searchFilterChips, setSearchFilterChips] = useState<
+    SearchFilterChip[]
+  >([]);
+  const [searchAutocompleteState, setSearchAutocompleteState] =
+    useState<SearchAutocompleteState>(null);
   const [sortMode, setSortMode] = useState<SortMode>("played-count");
   const [secondarySortMode, setSecondarySortMode] =
     useState<SecondarySortMode>("rating");
@@ -306,9 +507,17 @@ function App() {
     useState<ListSortDirection>("asc");
   const [thumbnailFrameSecond, setThumbnailFrameSecond] = useState("1");
   const [gridSize, setGridSize] = useState("180");
+  const [enableLanAccess, setEnableLanAccess] = useState(true);
+  const [enableDlna, setEnableDlna] = useState(true);
   const [mainViewMode, setMainViewMode] = useState<MainViewMode>("grid");
   const [appFontSize, setAppFontSize] = useState<AppFontSize>("large");
   const [showThumbnailTitles, setShowThumbnailTitles] = useState(true);
+  const [leftPanelTags, setLeftPanelTags] = useState<LeftPanelTags>(
+    defaultLeftPanelTags,
+  );
+  const [rightPanelInfo, setRightPanelInfo] = useState<RightPanelInfo>(
+    defaultRightPanelInfo,
+  );
   const [hideExplicitContent, setHideExplicitContent] = useState(false);
   const [explicitContentPasswordHash, setExplicitContentPasswordHash] =
     useState("");
@@ -316,7 +525,11 @@ function App() {
   const [editForm, setEditForm] = useState<VideoEditForm>({
     title: "",
     actor: "",
+    director: "",
+    publisher: "",
+    writers: "",
     genre: "",
+    sub_genre: "",
     date: "",
     backup_date: "",
     backup_location: "",
@@ -377,6 +590,7 @@ function App() {
     null,
   );
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  const [isTopPanelCollapsed, setIsTopPanelCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const isGeneratingThumbnails = useRef(false);
   const settingsLoaded = useRef(false);
@@ -389,6 +603,9 @@ function App() {
   const hoverPreviewVideoRef = useRef<VideoFile | null>(null);
   const hoverPreviewPositionRef = useRef({ x: 0, y: 0 });
   const actorCropImageRef = useRef<HTMLImageElement | null>(null);
+  const genreFilterRef = useRef<HTMLDetailsElement | null>(null);
+  const subGenreFilterRef = useRef<HTMLDetailsElement | null>(null);
+  const ratingFilterRef = useRef<HTMLDetailsElement | null>(null);
   const actorCropDragRef = useRef<{
     startX: number;
     startY: number;
@@ -397,17 +614,77 @@ function App() {
   } | null>(null);
 
   useEffect(() => {
+    function closeFiltersOnOutsideClick(event: globalThis.PointerEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      for (const filter of [
+        genreFilterRef.current,
+        subGenreFilterRef.current,
+        ratingFilterRef.current,
+      ]) {
+        if (filter?.open && !filter.contains(target)) {
+          filter.open = false;
+        }
+      }
+    }
+
+    document.addEventListener("pointerdown", closeFiltersOnOutsideClick);
+    return () =>
+      document.removeEventListener("pointerdown", closeFiltersOnOutsideClick);
+  }, []);
+
+  useEffect(() => {
     async function loadDatabase() {
       try {
-        const path = await invoke<string>("database_file_path");
-        setDatabasePath(path);
+        let settings: AppSettings;
+        let database: VideoDatabase | null;
 
-        const settings = await invoke<AppSettings>("load_app_settings");
+        if (isLanBrowser) {
+          const [settingsResponse, databaseResponse] = await Promise.all([
+            fetch("/api/settings", { cache: "no-store" }),
+            fetch("/api/library", { cache: "no-store" }),
+          ]);
+          if (!databaseResponse.ok) {
+            throw new Error(await databaseResponse.text());
+          }
+          settings = settingsResponse.ok
+            ? ((await settingsResponse.json()) as AppSettings)
+            : ({} as AppSettings);
+          const savedSettings = window.localStorage.getItem(
+            "archivekong-browser-settings",
+          );
+          if (savedSettings) {
+            settings = { ...settings, ...JSON.parse(savedSettings) };
+          }
+          database = (await databaseResponse.json()) as VideoDatabase;
+          setDatabasePath("Hosted by the ArchiveKong desktop app");
+        } else {
+          const path = await invoke<string>("database_file_path");
+          setDatabasePath(path);
+          setLanServerUrl(await invoke<string>("lan_server_url"));
+          settings = await invoke<AppSettings>("load_app_settings");
+          database = await invoke<VideoDatabase | null>("load_video_database");
+        }
+
         setThumbnailFrameSecond(settings.thumbnail_frame_second ?? "1");
         setGridSize(settings.grid_size ?? "180");
+        setEnableLanAccess(settings.enable_lan_access ?? true);
+        setEnableDlna(settings.enable_dlna ?? true);
         setMainViewMode(settings.main_view_mode ?? "grid");
         setAppFontSize(settings.font_size ?? "large");
         setShowThumbnailTitles(settings.show_thumbnail_titles ?? true);
+        setLeftPanelTags({
+          ...defaultLeftPanelTags,
+          ...settings.left_panel_tags,
+        });
+        setRightPanelInfo({
+          ...defaultRightPanelInfo,
+          ...settings.right_panel_info,
+        });
         setHideExplicitContent(settings.hide_explicit_content ?? false);
         setExplicitContentPasswordHash(
           settings.explicit_content_password_hash ?? "",
@@ -415,10 +692,6 @@ function App() {
         setSortMode(settings.sort_mode ?? "played-count");
         setSecondarySortMode(settings.secondary_sort_mode ?? "rating");
         settingsLoaded.current = true;
-
-        const database = await invoke<VideoDatabase | null>(
-          "load_video_database",
-        );
 
         if (database) {
           setSelectedFolders(databaseFolders(database));
@@ -434,7 +707,9 @@ function App() {
           setRightPanelMode("video");
           setHasDatabase(true);
           setThumbnailFailures(new Set());
-          startThumbnailCaching(database.videos);
+          if (!isLanBrowser) {
+            startThumbnailCaching(database.videos);
+          }
         }
       } catch (error) {
         settingsLoaded.current = true;
@@ -446,6 +721,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (isLanBrowser) {
+      return;
+    }
     let unlisten: (() => void) | undefined;
 
     listen<OrganizeProgress>("organize-progress", (event) => {
@@ -460,6 +738,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (isLanBrowser) {
+      return;
+    }
     let unlistenBackup: (() => void) | undefined;
     let unlistenRestore: (() => void) | undefined;
 
@@ -485,23 +766,56 @@ function App() {
       return;
     }
 
-    invoke("save_app_settings", {
+    const settings = {
       thumbnailFrameSecond,
       gridSize,
+      enableLanAccess,
+      enableDlna,
       mainViewMode,
       fontSize: appFontSize,
       showThumbnailTitles,
+      leftPanelTags,
+      rightPanelInfo,
       hideExplicitContent,
       explicitContentPasswordHash,
       sortMode,
       secondarySortMode,
-    }).catch((error) => setErrorMessage(String(error)));
+    };
+
+    if (isLanBrowser) {
+      window.localStorage.setItem(
+        "archivekong-browser-settings",
+        JSON.stringify({
+          thumbnail_frame_second: thumbnailFrameSecond,
+          grid_size: gridSize,
+          enable_lan_access: enableLanAccess,
+          enable_dlna: enableDlna,
+          main_view_mode: mainViewMode,
+          font_size: appFontSize,
+          show_thumbnail_titles: showThumbnailTitles,
+          left_panel_tags: leftPanelTags,
+          right_panel_info: rightPanelInfo,
+          hide_explicit_content: hideExplicitContent,
+          sort_mode: sortMode,
+          secondary_sort_mode: secondarySortMode,
+        } satisfies AppSettings),
+      );
+      return;
+    }
+
+    invoke("save_app_settings", settings).catch((error) =>
+      setErrorMessage(String(error)),
+    );
   }, [
     thumbnailFrameSecond,
     gridSize,
+    enableLanAccess,
+    enableDlna,
     mainViewMode,
     appFontSize,
     showThumbnailTitles,
+    leftPanelTags,
+    rightPanelInfo,
     hideExplicitContent,
     explicitContentPasswordHash,
     sortMode,
@@ -511,6 +825,28 @@ function App() {
   useEffect(() => {
     activeViewRef.current = activeView;
   }, [activeView]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(AUTO_COLLAPSE_PANELS_QUERY);
+
+    function collapsePanelsForCompactLayout(
+      event: MediaQueryListEvent | MediaQueryList,
+    ) {
+      if (!event.matches) {
+        return;
+      }
+
+      setIsLeftPanelCollapsed(true);
+      setIsTopPanelCollapsed(true);
+      setIsRightPanelCollapsed(true);
+    }
+
+    collapsePanelsForCompactLayout(mediaQuery);
+    mediaQuery.addEventListener("change", collapsePanelsForCompactLayout);
+
+    return () =>
+      mediaQuery.removeEventListener("change", collapsePanelsForCompactLayout);
+  }, []);
 
   useEffect(() => {
     if (!hideExplicitContent) {
@@ -547,6 +883,11 @@ function App() {
 
       if (actorCrop) {
         setActorCrop(null);
+        return;
+      }
+
+      if (isActorModalOpen) {
+        setIsActorModalOpen(false);
         return;
       }
 
@@ -602,6 +943,7 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     actorCrop,
+    isActorModalOpen,
     contextMenu,
     isStatisticsOpen,
     backupResult,
@@ -630,7 +972,11 @@ function App() {
       setEditForm({
         title: "",
         actor: "",
+        director: "",
+        publisher: "",
+        writers: "",
         genre: "",
+        sub_genre: "",
         date: "",
         backup_date: "",
         backup_location: "",
@@ -645,7 +991,11 @@ function App() {
     setEditForm({
       title: sharedStringValue(selectedVideos, "title"),
       actor: sharedStringValue(selectedVideos, "actor"),
+      director: sharedStringValue(selectedVideos, "director"),
+      publisher: sharedStringValue(selectedVideos, "publisher"),
+      writers: sharedStringValue(selectedVideos, "writers"),
       genre: sharedStringValue(selectedVideos, "genre"),
+      sub_genre: sharedStringValue(selectedVideos, "sub_genre"),
       date: sharedStringValue(selectedVideos, "date"),
       backup_date: sharedStringValue(selectedVideos, "backup_date"),
       backup_location: sharedStringValue(selectedVideos, "backup_location"),
@@ -1107,6 +1457,11 @@ function App() {
   async function openVideo(filePath: string) {
     setErrorMessage("");
 
+    if (isLanBrowser) {
+      window.open(lanFileUrl("media", filePath), "_blank", "noopener,noreferrer");
+      return;
+    }
+
     try {
       const watchedVideo = videoFiles.find((video) => video.file_path === filePath);
       const playCount = await invoke<number>("open_video_file", { filePath });
@@ -1238,7 +1593,11 @@ function App() {
     field:
       | "title"
       | "actor"
+      | "director"
+      | "publisher"
+      | "writers"
       | "genre"
+      | "sub_genre"
       | "date"
       | "backup_date"
       | "backup_location"
@@ -1391,7 +1750,11 @@ function App() {
             filePaths: selectedVideos.map((video) => video.file_path),
             title: valueForBatchSave(editForm.title),
             actor: valueForBatchSave(editForm.actor),
+            director: valueForBatchSave(editForm.director),
+            publisher: valueForBatchSave(editForm.publisher),
+            writers: valueForBatchSave(editForm.writers),
             genre: valueForBatchSave(editForm.genre),
+            subGenre: valueForBatchSave(editForm.sub_genre),
             date: valueForBatchSave(editForm.date),
             backupDate: valueForBatchSave(editForm.backup_date),
             backupLocation: valueForBatchSave(editForm.backup_location),
@@ -1422,7 +1785,11 @@ function App() {
         filePath: selectedVideoForSave.file_path,
         title: editForm.title,
         actor: editForm.actor,
+        director: editForm.director,
+        publisher: editForm.publisher,
+        writers: editForm.writers,
         genre: editForm.genre,
+        subGenre: editForm.sub_genre,
         date: editForm.date,
         backupDate: editForm.backup_date,
         backupLocation: editForm.backup_location,
@@ -1750,8 +2117,10 @@ function App() {
     return {
       activeView: activeViewRef.current,
       selectedActor,
+      actorVideosActor,
       selectedGenre,
       selectedRating,
+      selectedMetadataGroup,
       selectedVideoPath: selectedVideo?.file_path ?? "",
       selectedVideoPaths,
       rightPanelMode,
@@ -1778,8 +2147,10 @@ function App() {
     activeViewRef.current = snapshot.activeView;
     setActiveView(snapshot.activeView);
     setSelectedActor(snapshot.selectedActor);
+    setActorVideosActor(snapshot.actorVideosActor);
     setSelectedGenre(snapshot.selectedGenre);
     setSelectedRating(snapshot.selectedRating);
+    setSelectedMetadataGroup(snapshot.selectedMetadataGroup);
     setSelectedVideo(restoredSelectedVideo);
     setSelectedVideoPaths(
       validSelectedPaths.length > 0
@@ -1826,11 +2197,14 @@ function App() {
     setIsRightPanelEditing(false);
     navigateToView("actors");
     setSelectedActor(actorName);
+    setActorVideosActor(actorName);
     setSelectedGenre("");
     setSelectedRating(null);
+    setSelectedMetadataGroup("");
     setActorFilter("all");
     setGenreFilters([]);
     setRatingFilters([]);
+    setSearchFilterChips([]);
     setRightPanelMode("actor");
   }
 
@@ -1849,20 +2223,23 @@ function App() {
     setIsRightPanelEditing(false);
     navigateToView("actors");
     setSelectedActor(actorName);
+    setActorVideosActor(actorName);
     setSelectedGenre("");
     setSelectedRating(null);
+    setSelectedMetadataGroup("");
     setActorFilter("all");
     setGenreFilters([]);
     setRatingFilters([]);
+    setSearchFilterChips([]);
     setRightPanelMode("actor");
   }
 
   function artworkSource(video: VideoFile) {
     const source = hasCachedThumbnail(video) ? video.artwork_thumbnail : "";
     const refreshKey = thumbnailRefreshKeys[video.file_path];
-    const url = convertFileSrc(source);
+    const url = isLanBrowser ? lanFileUrl("image", source) : convertFileSrc(source);
 
-    return refreshKey ? `${url}?refresh=${refreshKey}` : url;
+    return refreshKey ? `${url}${url.includes("?") ? "&" : "?"}refresh=${refreshKey}` : url;
   }
 
   function hasCachedThumbnail(video: VideoFile) {
@@ -2250,6 +2627,10 @@ function App() {
     }
 
     const megabytes = bytes / 1024 / 1024;
+    if (megabytes >= 1000) {
+      return `${(megabytes / 1000).toFixed(1)} GB`;
+    }
+
     return `${megabytes.toFixed(1)} MB`;
   }
 
@@ -2388,9 +2769,10 @@ function App() {
 
           return (
             <button
-              aria-label={`${starNumber} star`}
+              aria-label={`Set ${starNumber - 0.5} or ${starNumber} stars`}
               className="star-button"
               key={starNumber}
+              title="Click the left half for a half star, or the right half for a full star"
               type="button"
               onClick={(event) => {
                 const bounds = event.currentTarget.getBoundingClientRect();
@@ -2412,6 +2794,22 @@ function App() {
 
   function genreNames(video: VideoFile) {
     return splitTagList(video.genre, "Unknown genre");
+  }
+
+  function subGenreNames(video: VideoFile) {
+    return splitTagList(video.sub_genre, "Unknown sub-genre");
+  }
+
+  function directorNames(video: VideoFile) {
+    return splitTagList(video.director, "Unknown director");
+  }
+
+  function publisherNames(video: VideoFile) {
+    return splitTagList(video.publisher, "Unknown publisher");
+  }
+
+  function writerNames(video: VideoFile) {
+    return splitTagList(video.writers, "Unknown writer");
   }
 
   function dateYearName(video: VideoFile) {
@@ -2469,8 +2867,17 @@ function App() {
     return uniqueTagOptions(genreNames);
   }
 
+  function subGenreFilterOptions() {
+    return uniqueTagOptions(subGenreNames);
+  }
+
   function autocompleteOptions(field: AutocompleteField) {
-    return field === "actor" ? actorFilterOptions() : genreFilterOptions();
+    if (field === "actor") return actorFilterOptions();
+    if (field === "director") return uniqueTagOptions(directorNames);
+    if (field === "publisher") return uniqueTagOptions(publisherNames);
+    if (field === "writers") return uniqueTagOptions(writerNames);
+    if (field === "sub_genre") return subGenreFilterOptions();
+    return genreFilterOptions();
   }
 
   function autocompleteSearchPart(value: string) {
@@ -2510,6 +2917,157 @@ function App() {
         );
       })
       .slice(0, 8);
+  }
+
+  function searchSuggestionOptions() {
+    const searchText = filterText.trim().toLowerCase();
+
+    if (!searchText) {
+      return [];
+    }
+
+    const selectedKeys = new Set(
+      searchFilterChips.map((chip) => searchFilterKey(chip)),
+    );
+    const seenKeys = new Set<string>();
+    const suggestions: SearchSuggestion[] = [];
+
+    function addSuggestion(field: SearchFilterField, value: string) {
+      const cleanValue = value.trim();
+
+      if (!cleanValue) {
+        return;
+      }
+
+      const chip = { field, value: cleanValue };
+      const key = searchFilterKey(chip);
+      const label = searchFilterFieldLabels[field];
+      const normalizedLabel = `${label} ${cleanValue}`.toLowerCase();
+
+      if (
+        selectedKeys.has(key) ||
+        seenKeys.has(key) ||
+        !normalizedLabel.includes(searchText)
+      ) {
+        return;
+      }
+
+      seenKeys.add(key);
+      suggestions.push({ ...chip, label });
+    }
+
+    for (const video of contentVisibleVideos(videoFiles)) {
+      addSuggestion("title", videoDisplayName(video));
+      addSuggestion("filename", video.filename);
+      addSuggestion("file_path", video.file_path);
+      for (const actor of actorNames(video)) addSuggestion("actor", actor);
+      for (const director of directorNames(video)) {
+        addSuggestion("director", director);
+      }
+      for (const publisher of publisherNames(video)) {
+        addSuggestion("publisher", publisher);
+      }
+      for (const writer of writerNames(video)) addSuggestion("writers", writer);
+      for (const genre of genreNames(video)) addSuggestion("genre", genre);
+      for (const subGenre of subGenreNames(video)) {
+        addSuggestion("sub_genre", subGenre);
+      }
+      addSuggestion("date", video.date);
+      addSuggestion("year", dateYearName(video));
+      addSuggestion("rating", formatRatingLabel(ratingValue(video)));
+      addSuggestion("filesize", formatFileSize(video.filesize));
+      addSuggestion("resolution", video.resolution);
+      addSuggestion("bitrate", video.bitrate);
+      addSuggestion("play_count", String(video.play_count ?? 0));
+      addSuggestion("added_at", video.added_at);
+      addSuggestion("backup_date", video.backup_date);
+      addSuggestion("backup_location", video.backup_location);
+      addSuggestion("notes", video.notes);
+      addSuggestion(
+        "explicit_content",
+        video.explicit_content ? "Explicit" : "Not explicit",
+      );
+
+      if (suggestions.length >= 12) {
+        break;
+      }
+    }
+
+    return suggestions.slice(0, 12);
+  }
+
+  function searchFilterKey(chip: SearchFilterChip) {
+    return `${chip.field}:${chip.value.toLowerCase()}`;
+  }
+
+  function applySearchSuggestion(suggestion: SearchSuggestion) {
+    setSearchFilterChips((currentChips) => {
+      if (
+        currentChips.some(
+          (chip) => searchFilterKey(chip) === searchFilterKey(suggestion),
+        )
+      ) {
+        return currentChips;
+      }
+
+      return [
+        ...currentChips,
+        { field: suggestion.field, value: suggestion.value },
+      ];
+    });
+    setFilterText("");
+    setSearchAutocompleteState(null);
+  }
+
+  function removeSearchFilterChip(index: number) {
+    setSearchFilterChips((currentChips) =>
+      currentChips.filter((_, chipIndex) => chipIndex !== index),
+    );
+  }
+
+  function handleSearchFilterKeyDown(
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ) {
+    const options = searchSuggestionOptions();
+
+    if (event.key === "Escape") {
+      setSearchAutocompleteState(null);
+      return;
+    }
+
+    if (options.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSearchAutocompleteState((currentState) => ({
+        activeIndex: currentState
+          ? (currentState.activeIndex + 1) % options.length
+          : 0,
+      }));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSearchAutocompleteState((currentState) => ({
+        activeIndex: currentState
+          ? (currentState.activeIndex - 1 + options.length) % options.length
+          : options.length - 1,
+      }));
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === "Tab") {
+      const suggestion =
+        options[searchAutocompleteState?.activeIndex ?? 0] ?? options[0];
+
+      if (suggestion) {
+        event.preventDefault();
+        applySearchSuggestion(suggestion);
+      }
+    }
   }
 
   function applyAutocompleteSuggestion(
@@ -2593,6 +3151,28 @@ function App() {
     );
   }
 
+  function selectAllOtherGenreFilters(genre: string) {
+    setGenreFilters(
+      genreFilterOptions().filter((availableGenre) => availableGenre !== genre),
+    );
+  }
+
+  function toggleSubGenreFilter(subGenre: string) {
+    setSubGenreFilters((currentSubGenres) =>
+      currentSubGenres.includes(subGenre)
+        ? currentSubGenres.filter((currentSubGenre) => currentSubGenre !== subGenre)
+        : [...currentSubGenres, subGenre],
+    );
+  }
+
+  function selectAllOtherSubGenreFilters(subGenre: string) {
+    setSubGenreFilters(
+      subGenreFilterOptions().filter(
+        (availableSubGenre) => availableSubGenre !== subGenre,
+      ),
+    );
+  }
+
   function toggleRatingFilter(rating: number) {
     setRatingFilters((currentRatings) =>
       currentRatings.includes(rating)
@@ -2611,6 +3191,18 @@ function App() {
     }
 
     return `${genreFilters.length} genres`;
+  }
+
+  function subGenreFilterLabel() {
+    if (subGenreFilters.length === 0) {
+      return "All sub-genres";
+    }
+
+    if (subGenreFilters.length === 1) {
+      return subGenreFilters[0];
+    }
+
+    return `${subGenreFilters.length} sub-genres`;
   }
 
   function ratingFilterLabel() {
@@ -2700,8 +3292,52 @@ function App() {
     return !hideExplicitContent || !video.explicit_content;
   }
 
+  function matchesSearchFilterChip(video: VideoFile, chip: SearchFilterChip) {
+    if (chip.field === "actor") return actorNames(video).includes(chip.value);
+    if (chip.field === "director") return directorNames(video).includes(chip.value);
+    if (chip.field === "publisher") {
+      return publisherNames(video).includes(chip.value);
+    }
+    if (chip.field === "writers") return writerNames(video).includes(chip.value);
+    if (chip.field === "genre") return genreNames(video).includes(chip.value);
+    if (chip.field === "sub_genre") {
+      return subGenreNames(video).includes(chip.value);
+    }
+    if (chip.field === "title") return videoDisplayName(video) === chip.value;
+    if (chip.field === "filename") return video.filename === chip.value;
+    if (chip.field === "file_path") return video.file_path === chip.value;
+    if (chip.field === "date") return video.date === chip.value;
+    if (chip.field === "year") return dateYearName(video) === chip.value;
+    if (chip.field === "rating") {
+      return formatRatingLabel(ratingValue(video)) === chip.value;
+    }
+    if (chip.field === "filesize") {
+      return formatFileSize(video.filesize) === chip.value;
+    }
+    if (chip.field === "resolution") return video.resolution === chip.value;
+    if (chip.field === "bitrate") return video.bitrate === chip.value;
+    if (chip.field === "play_count") {
+      return String(video.play_count ?? 0) === chip.value;
+    }
+    if (chip.field === "added_at") return video.added_at === chip.value;
+    if (chip.field === "backup_date") return video.backup_date === chip.value;
+    if (chip.field === "backup_location") {
+      return video.backup_location === chip.value;
+    }
+    if (chip.field === "notes") return video.notes === chip.value;
+
+    return (video.explicit_content ? "Explicit" : "Not explicit") === chip.value;
+  }
+
   function matchesFilter(video: VideoFile) {
     if (!isVideoVisibleByExplicitSetting(video)) {
+      return false;
+    }
+
+    if (
+      searchFilterChips.length > 0 &&
+      !searchFilterChips.every((chip) => matchesSearchFilterChip(video, chip))
+    ) {
       return false;
     }
 
@@ -2715,7 +3351,11 @@ function App() {
       video.filename,
       video.title,
       video.actor,
+      video.director,
+      video.publisher,
+      video.writers,
       video.genre,
+      video.sub_genre,
       video.date,
       formatRatingLabel(ratingValue(video)),
       String(ratingValue(video)),
@@ -2766,7 +3406,7 @@ function App() {
     }
 
     if (mode === "director") {
-      return actorNames(first)[0].localeCompare(actorNames(second)[0]);
+      return directorNames(first)[0].localeCompare(directorNames(second)[0]);
     }
 
     return videoDisplayName(first).localeCompare(videoDisplayName(second));
@@ -2797,6 +3437,15 @@ function App() {
         if (
           genreFilters.length > 0 &&
           !genreNames(video).some((genre) => genreFilters.includes(genre))
+        ) {
+          return false;
+        }
+
+        if (
+          subGenreFilters.length > 0 &&
+          !subGenreNames(video).some((subGenre) =>
+            subGenreFilters.includes(subGenre),
+          )
         ) {
           return false;
         }
@@ -2870,6 +3519,10 @@ function App() {
 
     if (key === "genre") {
       return video.genre;
+    }
+
+    if (key === "sub_genre") {
+      return video.sub_genre;
     }
 
     if (key === "date") {
@@ -2947,6 +3600,38 @@ function App() {
     return buildGroups(genreNames);
   }
 
+  function metadataViewConfig(view: ViewMode = activeView) {
+    if (view === "directors") {
+      return { singular: "Director", plural: "Directors", names: directorNames };
+    }
+    if (view === "years") {
+      return { singular: "Year", plural: "Years", names: (video: VideoFile) => [dateYearName(video)] };
+    }
+    if (view === "publishers") {
+      return { singular: "Publisher", plural: "Publishers", names: publisherNames };
+    }
+    if (view === "writers") {
+      return { singular: "Writer", plural: "Writers", names: writerNames };
+    }
+    if (view === "subgenres") {
+      return {
+        singular: "Sub-genre",
+        plural: "Sub-genres",
+        names: subGenreNames,
+      };
+    }
+    return null;
+  }
+
+  function metadataGroups() {
+    const config = metadataViewConfig();
+    return config ? buildGroups(config.names) : [];
+  }
+
+  function selectedMetadataLibraryGroup() {
+    return metadataGroups().find((group) => group.name === selectedMetadataGroup) ?? null;
+  }
+
   function ratingGroups() {
     return buildGroups(ratingGroupName).sort((first, second) => {
       const firstRating = ratingValue(first.artworkVideo);
@@ -2986,6 +3671,9 @@ function App() {
 
   function openVideoContextMenu(event: MouseEvent, video: VideoFile) {
     event.preventDefault();
+    if (isLanBrowser) {
+      return;
+    }
     const rightClickedSelected = selectedVideoPaths.includes(video.file_path);
     const targetPaths = rightClickedSelected
       ? selectedVideoPaths
@@ -3064,6 +3752,20 @@ function App() {
     setSelectedVideoPaths([video.file_path]);
   }
 
+  function activateVideoCard(
+    event: MouseEvent<HTMLElement>,
+    video: VideoFile,
+    selectionScopeVideos: VideoFile[],
+  ) {
+    selectVideoCard(event, video, selectionScopeVideos);
+
+    if (!isLanBrowser || event.shiftKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    openVideo(video.file_path);
+  }
+
   function renderVideoResults(videos: VideoFile[]) {
     const filteredVideos = visibleVideos(videos);
 
@@ -3095,13 +3797,17 @@ function App() {
   }
 
   function renderImagePath(path: string, className: string, refreshKey = 0) {
-    const source = convertFileSrc(path);
+    const source = isLanBrowser ? lanFileUrl("image", path) : convertFileSrc(path);
 
     return (
       <img
         alt=""
         className={className}
-        src={refreshKey ? `${source}?refresh=${refreshKey}` : source}
+        src={
+          refreshKey
+            ? `${source}${source.includes("?") ? "&" : "?"}refresh=${refreshKey}`
+            : source
+        }
       />
     );
   }
@@ -3169,9 +3875,11 @@ function App() {
         className={isSelected ? "video-card selected" : "video-card"}
         key={video.file_path}
         type="button"
-        onClick={(event) => selectVideoCard(event, video, selectionScopeVideos)}
+        onClick={(event) => activateVideoCard(event, video, selectionScopeVideos)}
         onContextMenu={(event) => openVideoContextMenu(event, video)}
-        onDoubleClick={() => openVideo(video.file_path)}
+        onDoubleClick={
+          isLanBrowser ? undefined : () => openVideo(video.file_path)
+        }
         onMouseEnter={(event) => startHoverPreview(event, video)}
         onMouseMove={moveHoverPreview}
         onMouseLeave={stopHoverPreview}
@@ -3218,6 +3926,7 @@ function App() {
               {renderListHeader("filename", "Filename")}
               {renderListHeader("actor", "Actor")}
               {renderListHeader("genre", "Genre")}
+              {renderListHeader("sub_genre", "Sub-genre")}
               {renderListHeader("date", "Date")}
               {renderListHeader("rating", "Rating")}
               {renderListHeader("play_count", "Play count")}
@@ -3241,9 +3950,11 @@ function App() {
                   className={isSelected ? "selected" : ""}
                   key={video.file_path}
                   tabIndex={0}
-                  onClick={(event) => selectVideoCard(event, video, sortedVideos)}
+                  onClick={(event) => activateVideoCard(event, video, sortedVideos)}
                   onContextMenu={(event) => openVideoContextMenu(event, video)}
-                  onDoubleClick={() => openVideo(video.file_path)}
+                  onDoubleClick={
+                    isLanBrowser ? undefined : () => openVideo(video.file_path)
+                  }
                   onMouseEnter={(event) => startHoverPreview(event, video)}
                   onMouseMove={moveHoverPreview}
                   onMouseLeave={stopHoverPreview}
@@ -3257,6 +3968,7 @@ function App() {
                   <td>{textOrDash(video.filename)}</td>
                   <td>{textOrDash(video.actor)}</td>
                   <td>{textOrDash(video.genre)}</td>
+                  <td>{textOrDash(video.sub_genre)}</td>
                   <td>{textOrDash(video.date)}</td>
                   <td>{video.rating ? `${video.rating}/10` : "Unrated"}</td>
                   <td>{video.play_count ?? 0}</td>
@@ -3307,7 +4019,7 @@ function App() {
           </div>
           <div>
             <dt>Rating</dt>
-            <dd>{hoverPreview.video.rating ? `${hoverPreview.video.rating}/10` : "Unrated"}</dd>
+            <dd>{renderRatingStars(ratingValue(hoverPreview.video))}</dd>
           </div>
           <div>
             <dt>Play count</dt>
@@ -3359,6 +4071,7 @@ function App() {
     group: LibraryGroup,
     selectedName: string,
     onSelect: (group: LibraryGroup) => void,
+    onOpen: (group: LibraryGroup) => void,
   ) {
     return (
       <button
@@ -3369,7 +4082,14 @@ function App() {
         }
         key={group.name}
         type="button"
-        onClick={() => onSelect(group)}
+        onClick={() => {
+          onSelect(group);
+
+          if (isLanBrowser) {
+            onOpen(group);
+          }
+        }}
+        onDoubleClick={isLanBrowser ? undefined : () => onOpen(group)}
       >
         <span className="artwork-frame">
           {renderActorArtwork(group, "actor-artwork")}
@@ -3392,10 +4112,11 @@ function App() {
       return renderSettingsPage();
     }
 
-    if (activeView === "actors") {
-      const actorGroup = selectedActorGroup();
+    const metadataConfig = metadataViewConfig();
+    if (metadataConfig) {
+      const selectedGroup = selectedMetadataLibraryGroup();
 
-      if (actorGroup) {
+      if (selectedGroup) {
         return (
           <>
             <button
@@ -3403,13 +4124,41 @@ function App() {
               type="button"
               onClick={() => {
                 pushNavigationSnapshot();
-                setSelectedActor("");
-                setRightPanelMode("actor");
-                setIsRightPanelEditing(false);
+                setSelectedMetadataGroup("");
+                setRightPanelMode("metadata");
               }}
             >
-              All Actors
+              All {metadataConfig.plural}
             </button>
+            {renderVideoResults(selectedGroup.videos)}
+          </>
+        );
+      }
+
+      return (
+        <div className="video-grid">
+          {metadataGroups().map((group) =>
+            renderGroupCard(group, selectedMetadataGroup, (nextGroup) => {
+              pushNavigationSnapshot();
+              setSelectedMetadataGroup(nextGroup.name);
+              setSelectedActor("");
+              setSelectedGenre("");
+              setSelectedRating(null);
+              setRightPanelMode("metadata");
+              setIsRightPanelEditing(false);
+            }),
+          )}
+        </div>
+      );
+    }
+
+    if (activeView === "actors") {
+      const actorGroup =
+        actorGroups().find((actor) => actor.name === actorVideosActor) ?? null;
+
+      if (actorGroup) {
+        return (
+          <>
             {renderVideoResults(actorGroup.videos)}
           </>
         );
@@ -3422,13 +4171,13 @@ function App() {
               actor,
               selectedActor,
               (group) => {
-                pushNavigationSnapshot();
                 setSelectedActor(group.name);
                 setSelectedGenre("");
                 setSelectedRating(null);
                 setRightPanelMode("actor");
                 setIsRightPanelEditing(false);
               },
+              (group) => showActorVideosByName(group.name, group.videos),
             ),
           )}
         </div>
@@ -3441,18 +4190,6 @@ function App() {
       if (genreGroup) {
         return (
           <>
-            <button
-              className="back-button"
-              type="button"
-              onClick={() => {
-                pushNavigationSnapshot();
-                setSelectedGenre("");
-                setRightPanelMode("genre");
-                setIsRightPanelEditing(false);
-              }}
-            >
-              All Genres
-            </button>
             {renderVideoResults(genreGroup.videos)}
           </>
         );
@@ -3525,7 +4262,7 @@ function App() {
       <section className="settings-page">
         <div className="settings-section">
           <h2>Settings</h2>
-          <div className="settings-field">
+          {!isLanBrowser && <div className="settings-field">
             <label htmlFor="thumbnail-frame-second">
               Thumbnail Generation Time On Video
             </label>
@@ -3537,9 +4274,9 @@ function App() {
               value={thumbnailFrameSecond}
               onChange={(event) => setThumbnailFrameSecond(event.target.value)}
             />
-          </div>
+          </div>}
           <div className="settings-field">
-            <label htmlFor="thumbnail-size">Thumbnail size</label>
+            <label htmlFor="thumbnail-size">Maximum thumbnail size</label>
             <div className="thumbnail-size-control">
               <input
                 id="thumbnail-size"
@@ -3602,51 +4339,151 @@ function App() {
               Hide explicit content
             </label>
           </div>
-          <button type="button" onClick={setExplicitPassword}>
-            {explicitContentPasswordHash
-              ? "Change Explicit Password"
-              : "Set Explicit Password"}
-          </button>
-          <button disabled type="button">
-            Select Database JSON
-          </button>
-          <button type="button" onClick={exportDatabaseFile}>
-            Export Database JSON
-          </button>
-          <button type="button" onClick={addDirectory}>
-            Add Directory
-          </button>
+          {!isLanBrowser && (
+            <>
+              <button type="button" onClick={setExplicitPassword}>
+                {explicitContentPasswordHash
+                  ? "Change Explicit Password"
+                  : "Set Explicit Password"}
+              </button>
+              <button disabled type="button">
+                Select Database JSON
+              </button>
+              <button type="button" onClick={exportDatabaseFile}>
+                Export Database JSON
+              </button>
+              <button type="button" onClick={addDirectory}>
+                Add Directory
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => setIsStatisticsOpen(true)}>
             Statistics
           </button>
-          <button
-            type="button"
-            disabled={isCheckingForUpdate || isInstallingUpdate}
-            onClick={checkForAppUpdates}
-          >
-            {isCheckingForUpdate ? "Checking..." : "Check for Updates"}
-          </button>
-          {pendingUpdate && (
-            <button
-              type="button"
-              disabled={isInstallingUpdate}
-              onClick={installPendingUpdate}
-            >
-              {isInstallingUpdate ? "Installing..." : "Install Update"}
-            </button>
+          {!isLanBrowser && (
+            <>
+              <button
+                type="button"
+                disabled={isCheckingForUpdate || isInstallingUpdate}
+                onClick={checkForAppUpdates}
+              >
+                {isCheckingForUpdate ? "Checking..." : "Check for Updates"}
+              </button>
+              {pendingUpdate && (
+                <button
+                  type="button"
+                  disabled={isInstallingUpdate}
+                  onClick={installPendingUpdate}
+                >
+                  {isInstallingUpdate ? "Installing..." : "Install Update"}
+                </button>
+              )}
+              {updateStatus && <p>{updateStatus}</p>}
+              {updateDownloadProgress && <p>{updateDownloadProgress}</p>}
+              <button type="button" onClick={previewRestoreBackup}>
+                Restore From Backup
+              </button>
+              <button
+                type="button"
+                disabled={isRefreshingDatabase || selectedFolders.length === 0}
+                onClick={refreshDatabase}
+              >
+                {isRefreshingDatabase ? "Refreshing..." : "Refresh All Database"}
+              </button>
+            </>
           )}
-          {updateStatus && <p>{updateStatus}</p>}
-          {updateDownloadProgress && <p>{updateDownloadProgress}</p>}
-          <button type="button" onClick={previewRestoreBackup}>
-            Restore From Backup
-          </button>
-          <button
-            type="button"
-            disabled={isRefreshingDatabase || selectedFolders.length === 0}
-            onClick={refreshDatabase}
-          >
-            {isRefreshingDatabase ? "Refreshing..." : "Refresh All Database"}
-          </button>
+        </div>
+
+        <div className="settings-section">
+          <h2>LAN access</h2>
+          {isLanBrowser ? (
+            <p>Read-only browser mode</p>
+          ) : (
+            <>
+              <div className="settings-field">
+                <label className="settings-checkbox" htmlFor="enable-lan-access">
+                  <input
+                    checked={enableLanAccess}
+                    id="enable-lan-access"
+                    type="checkbox"
+                    onChange={(event) => setEnableLanAccess(event.target.checked)}
+                  />
+                  Enable web library access
+                </label>
+              </div>
+              <div className="settings-field">
+                <label className="settings-checkbox" htmlFor="enable-dlna">
+                  <input
+                    checked={enableDlna}
+                    id="enable-dlna"
+                    type="checkbox"
+                    onChange={(event) => setEnableDlna(event.target.checked)}
+                  />
+                  Enable DLNA media server
+                </label>
+              </div>
+            </>
+          )}
+          <p>
+            Web library:{" "}
+            {enableLanAccess ? lanServerUrl || "Starting LAN server..." : "Disabled"}
+          </p>
+          <p>DLNA media server: {enableDlna ? "ArchiveKong" : "Disabled"}</p>
+        </div>
+
+        <div className="settings-section">
+          <h2>Left panel</h2>
+          {(
+            [
+              ["actors", "Actors"],
+              ["directors", "Directors"],
+              ["years", "Years"],
+              ["publishers", "Publishers"],
+              ["writers", "Writers"],
+              ["genres", "Genres"],
+              ["subgenres", "Sub-genres"],
+              ["ratings", "Ratings"],
+            ] as const
+          ).map(([tag, label]) => (
+            <div className="settings-field" key={tag}>
+              <label className="settings-checkbox" htmlFor={`show-${tag}`}>
+                <input
+                  checked={leftPanelTags[tag]}
+                  id={`show-${tag}`}
+                  type="checkbox"
+                  onChange={(event) =>
+                    setLeftPanelTags((currentTags) => ({
+                      ...currentTags,
+                      [tag]: event.target.checked,
+                    }))
+                  }
+                />
+                Show {label}
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <div className="settings-section">
+          <h2>Right panel</h2>
+          {rightPanelInfoOptions.map(([field, label]) => (
+            <div className="settings-field" key={field}>
+              <label className="settings-checkbox" htmlFor={`show-right-${field}`}>
+                <input
+                  checked={rightPanelInfo[field]}
+                  id={`show-right-${field}`}
+                  type="checkbox"
+                  onChange={(event) =>
+                    setRightPanelInfo((currentInfo) => ({
+                      ...currentInfo,
+                      [field]: event.target.checked,
+                    }))
+                  }
+                />
+                Show {label}
+              </label>
+            </div>
+          ))}
         </div>
 
         <div className="settings-section">
@@ -3667,6 +4504,11 @@ function App() {
           ) : (
             <p>No directories added.</p>
           )}
+        </div>
+
+        <div className="settings-section">
+          <h2>Supported Video File Extensions</h2>
+          <p>.mp4, .mkv, .avi, .mov, .wmv, .webm, .m4v</p>
         </div>
       </section>
     );
@@ -4229,6 +5071,76 @@ function App() {
     );
   }
 
+  function renderSearchFilterControl() {
+    const options = searchSuggestionOptions();
+    const isOpen = searchAutocompleteState !== null && options.length > 0;
+    const activeIndex = Math.min(
+      searchAutocompleteState?.activeIndex ?? 0,
+      Math.max(options.length - 1, 0),
+    );
+
+    return (
+      <label className="search-filter-control" htmlFor="filter-videos">
+        Filter
+        <div className="search-filter-box">
+          {searchFilterChips.map((chip, index) => (
+            <span
+              className="search-filter-chip"
+              key={`${searchFilterKey(chip)}-${index}`}
+            >
+              <b>{searchFilterFieldLabels[chip.field]}</b>
+              {chip.value}
+              <button
+                aria-label={`Remove ${searchFilterFieldLabels[chip.field]} ${
+                  chip.value
+                }`}
+                type="button"
+                onClick={() => removeSearchFilterChip(index)}
+              >
+                x
+              </button>
+            </span>
+          ))}
+          <input
+            autoComplete="off"
+            id="filter-videos"
+            value={filterText}
+            onBlur={() => {
+              window.setTimeout(() => setSearchAutocompleteState(null), 120);
+            }}
+            onChange={(event) => {
+              setFilterText(event.target.value);
+              setSearchAutocompleteState({ activeIndex: 0 });
+            }}
+            onFocus={() => {
+              if (filterText.trim()) {
+                setSearchAutocompleteState({ activeIndex: 0 });
+              }
+            }}
+            onKeyDown={handleSearchFilterKeyDown}
+          />
+          {isOpen && (
+            <div className="search-autocomplete-menu" role="listbox">
+              {options.map((option, index) => (
+                <button
+                  className={index === activeIndex ? "active" : ""}
+                  key={searchFilterKey(option)}
+                  role="option"
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applySearchSuggestion(option)}
+                >
+                  <span>{option.label}</span>
+                  <strong>{option.value}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </label>
+    );
+  }
+
   function renderAutocompleteInput(
     field: AutocompleteField,
     label: string,
@@ -4300,43 +5212,70 @@ function App() {
       <dl className="tag-list">
         {extended && includeFileSpecificRows && selectedVideo && (
           <>
-            {renderReadOnlyRow("Filename", selectedVideo.filename)}
-            {renderReadOnlyRow("File path", selectedVideo.file_path)}
+            {rightPanelInfo.filename &&
+              renderReadOnlyRow("Filename", selectedVideo.filename)}
+            {rightPanelInfo.file_path &&
+              renderReadOnlyRow("File path", selectedVideo.file_path)}
           </>
         )}
-        {renderReadOnlyRow("Actor", videoValues.actor)}
-        {renderReadOnlyRow("Title", videoValues.title)}
-        {renderReadOnlyRow("Genre", videoValues.genre)}
-        {extended && renderReadOnlyRow("Date", videoValues.date)}
-        {extended && renderReadOnlyRow("Backup date", videoValues.backup_date)}
-        {extended &&
+        {rightPanelInfo.actor && renderReadOnlyRow("Actor", videoValues.actor)}
+        {rightPanelInfo.director &&
+          renderReadOnlyRow("Director", videoValues.director)}
+        {rightPanelInfo.publisher &&
+          renderReadOnlyRow("Publisher", videoValues.publisher)}
+        {rightPanelInfo.writers &&
+          renderReadOnlyRow("Writers", videoValues.writers)}
+        {rightPanelInfo.title && renderReadOnlyRow("Title", videoValues.title)}
+        {rightPanelInfo.genre && renderReadOnlyRow("Genre", videoValues.genre)}
+        {rightPanelInfo.sub_genre &&
+          renderReadOnlyRow("Sub-genre", videoValues.sub_genre)}
+        {extended && rightPanelInfo.year &&
+          renderReadOnlyRow("Year", videoValues.date)}
+        {extended && rightPanelInfo.backup_date &&
+          renderReadOnlyRow("Backup date", videoValues.backup_date)}
+        {extended && rightPanelInfo.backup_location &&
           renderReadOnlyRow("Backup location", videoValues.backup_location)}
-        {extended && renderReadOnlyRow("Notes", videoValues.notes)}
-        {renderReadOnlyRow(
-          "Explicit content",
-          videoValues.explicit_content === "various"
-            ? "various"
-            : videoValues.explicit_content === "true"
-              ? "Yes"
-              : "No",
-        )}
-        {renderReadOnlyRow(
-          "Rating",
-          videoValues.rating === "various"
-            ? "various"
-            : `${videoValues.rating}/10`,
+        {extended && rightPanelInfo.notes &&
+          renderReadOnlyRow("Notes", videoValues.notes)}
+        {rightPanelInfo.explicit_content &&
+          renderReadOnlyRow(
+            "Explicit content",
+            videoValues.explicit_content === "various"
+              ? "various"
+              : videoValues.explicit_content === "true"
+                ? "Yes"
+                : "No",
+          )}
+        {rightPanelInfo.rating && (
+          <div>
+            <dt>Rating</dt>
+            <dd>
+              {videoValues.rating === "various" ? (
+                "various"
+              ) : (
+                <span className="rating-display">
+                  {renderRatingStars(Number.parseInt(videoValues.rating, 10) || 0)}
+                  <span>{videoValues.rating}/10</span>
+                </span>
+              )}
+            </dd>
+          </div>
         )}
         {extended && includeFileSpecificRows && selectedVideo &&
+          rightPanelInfo.filesize &&
           renderReadOnlyRow("Filesize", formatFileSize(selectedVideo.filesize) || "-")}
         {extended &&
           includeFileSpecificRows &&
           selectedVideo &&
+          rightPanelInfo.resolution &&
           renderReadOnlyRow("Resolution", selectedVideo.resolution || "-")}
         {extended &&
           includeFileSpecificRows &&
           selectedVideo &&
+          rightPanelInfo.bitrate &&
           renderReadOnlyRow("Bitrate", selectedVideo.bitrate || "-")}
-        {renderReadOnlyRow("Play count", videoValues.play_count)}
+        {rightPanelInfo.play_count &&
+          renderReadOnlyRow("Play count", videoValues.play_count)}
       </dl>
     );
   }
@@ -4355,7 +5294,27 @@ function App() {
     );
   }
 
-  function renderRightPanel() {
+  function renderRightPanel(allowActorModal = true) {
+    if (rightPanelMode === "metadata") {
+      const config = metadataViewConfig();
+      const group = selectedMetadataLibraryGroup();
+
+      if (!config || !group) {
+        return <p>Select a {config?.singular.toLowerCase() ?? "group"}.</p>;
+      }
+
+      return (
+        <>
+          {renderArtwork(group.artworkVideo, "details-artwork")}
+          <div className="summary-block">
+            <h2>{group.name}</h2>
+            <p>{group.videos.length} videos</p>
+            <p>{config.singular}</p>
+          </div>
+        </>
+      );
+    }
+
     if (rightPanelMode === "actor") {
       const actorGroup = selectedActorGroup();
 
@@ -4366,23 +5325,46 @@ function App() {
       if (!isRightPanelEditing) {
         return (
           <>
-            {renderActorArtwork(actorGroup, "actor-details-artwork", true)}
+            {allowActorModal ? (
+              <button
+                aria-label={`Open ${actorGroup.name} details`}
+                className="actor-modal-trigger"
+                type="button"
+                onClick={() => setIsActorModalOpen(true)}
+              >
+                {renderActorArtwork(actorGroup, "actor-details-artwork", true)}
+              </button>
+            ) : (
+              renderActorArtwork(actorGroup, "actor-details-artwork", true)
+            )}
             <div className="summary-block">
-              <h2>{actorGroup.name}</h2>
               <p>{actorGroup.videos.length} videos</p>
               <p>{actorBios[actorGroup.name] || "Bio not added yet."}</p>
             </div>
             {renderActorSocialReadOnly(actorGroup.name)}
-            <button type="button" onClick={() => setIsRightPanelEditing(true)}>
-              Edit
-            </button>
+            {!isLanBrowser && (
+              <button type="button" onClick={() => setIsRightPanelEditing(true)}>
+                Edit
+              </button>
+            )}
           </>
         );
       }
 
       return (
         <>
-          {renderActorArtwork(actorGroup, "actor-details-artwork", true)}
+          {allowActorModal ? (
+            <button
+              aria-label={`Open ${actorGroup.name} details`}
+              className="actor-modal-trigger"
+              type="button"
+              onClick={() => setIsActorModalOpen(true)}
+            >
+              {renderActorArtwork(actorGroup, "actor-details-artwork", true)}
+            </button>
+          ) : (
+            renderActorArtwork(actorGroup, "actor-details-artwork", true)
+          )}
           <button
             className="thumbnail-edit-button"
             type="button"
@@ -4391,7 +5373,6 @@ function App() {
             Change Thumbnail
           </button>
           <div className="summary-block">
-            <h2>{actorGroup.name}</h2>
             <p>{actorGroup.videos.length} videos</p>
             <label className="actor-bio-editor" htmlFor="actor-bio">
               Bio
@@ -4548,9 +5529,11 @@ function App() {
               <p>Shared values are shown. Different values show as various.</p>
             </div>
             {renderVideoReadOnlyDetails(editForm, isExtendedRightPanel)}
-            <button type="button" onClick={() => setIsRightPanelEditing(true)}>
-              Edit
-            </button>
+            {!isLanBrowser && (
+              <button type="button" onClick={() => setIsRightPanelEditing(true)}>
+                Edit
+              </button>
+            )}
           </>
         );
       }
@@ -4565,6 +5548,265 @@ function App() {
           </div>
 
           <div className="edit-form">
+            {rightPanelInfo.title && (
+              <div>
+                <label htmlFor="edit-title">Title</label>
+                <input
+                  id="edit-title"
+                  value={editForm.title}
+                  onChange={(event) =>
+                    setEditForm((currentForm) => ({
+                      ...currentForm,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            )}
+            {rightPanelInfo.actor &&
+              renderAutocompleteInput("actor", "Actor", "edit-actor")}
+            {rightPanelInfo.director &&
+              renderAutocompleteInput("director", "Director", "edit-director")}
+            {rightPanelInfo.publisher &&
+              renderAutocompleteInput("publisher", "Publisher", "edit-publisher")}
+            {rightPanelInfo.writers &&
+              renderAutocompleteInput("writers", "Writers", "edit-writers")}
+            {rightPanelInfo.genre &&
+              renderAutocompleteInput("genre", "Genre", "edit-genre")}
+            {rightPanelInfo.sub_genre &&
+              renderAutocompleteInput(
+                "sub_genre",
+                "Sub-genre",
+                "edit-sub-genre",
+              )}
+            {isExtendedRightPanel && (
+              <>
+                {rightPanelInfo.year && (
+                  <div>
+                    <label htmlFor="edit-date">Year</label>
+                    <input
+                      id="edit-date"
+                      value={editForm.date}
+                      onChange={(event) =>
+                        setEditForm((currentForm) => ({
+                          ...currentForm,
+                          date: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {rightPanelInfo.backup_date && (
+                  <div>
+                    <label htmlFor="edit-backup-date">Backup date</label>
+                    <input
+                      id="edit-backup-date"
+                      value={editForm.backup_date}
+                      onChange={(event) =>
+                        setEditForm((currentForm) => ({
+                          ...currentForm,
+                          backup_date: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {rightPanelInfo.backup_location && (
+                  <div>
+                    <label htmlFor="edit-backup-location">Backup location</label>
+                    <input
+                      id="edit-backup-location"
+                      value={editForm.backup_location}
+                      onChange={(event) =>
+                        setEditForm((currentForm) => ({
+                          ...currentForm,
+                          backup_location: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {rightPanelInfo.notes && (
+                  <div>
+                    <label htmlFor="edit-notes">Notes</label>
+                    <textarea
+                      id="edit-notes"
+                      value={editForm.notes}
+                      onChange={(event) =>
+                        setEditForm((currentForm) => ({
+                          ...currentForm,
+                          notes: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {rightPanelInfo.explicit_content && (
+              <label className="checkbox-field" htmlFor="edit-explicit-content-multi">
+                <input
+                  checked={editForm.explicit_content === "true"}
+                  id="edit-explicit-content-multi"
+                  ref={(input) => {
+                    if (input) {
+                      input.indeterminate = editForm.explicit_content === "various";
+                    }
+                  }}
+                  type="checkbox"
+                  onChange={(event) =>
+                    setEditForm((currentForm) => ({
+                      ...currentForm,
+                      explicit_content: event.target.checked ? "true" : "false",
+                    }))
+                  }
+                />
+                Explicit content
+              </label>
+            )}
+            {rightPanelInfo.rating && (
+              <div>
+                <label htmlFor="edit-rating">Rating</label>
+                <div className="rating-editor">
+                  {renderRatingStars(
+                    editForm.rating === "various"
+                      ? 0
+                      : Number.parseInt(editForm.rating, 10) || 0,
+                    (rating) =>
+                      setEditForm((currentForm) => ({
+                        ...currentForm,
+                        rating: String(rating),
+                      })),
+                  )}
+                  {editForm.rating === "various" && <p>various</p>}
+                  <div className="number-stepper">
+                    <button
+                      aria-label="Decrease rating"
+                      type="button"
+                      onClick={() => updateNumberField("rating", -1, 10)}
+                    >
+                      -
+                    </button>
+                    <input
+                      id="edit-rating"
+                      max="10"
+                      min="0"
+                      type={editForm.rating === "various" ? "text" : "number"}
+                      value={editForm.rating}
+                      onChange={(event) =>
+                        setEditForm((currentForm) => ({
+                          ...currentForm,
+                          rating: String(
+                            clampRating(
+                              Number.parseInt(event.target.value, 10) || 0,
+                            ),
+                          ),
+                        }))
+                      }
+                    />
+                    <button
+                      aria-label="Increase rating"
+                      type="button"
+                      onClick={() => updateNumberField("rating", 1, 10)}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {rightPanelInfo.play_count && (
+              <div>
+                <label htmlFor="edit-play-count">Played count</label>
+                <div className="number-stepper">
+                  <button
+                    aria-label="Decrease played count"
+                    type="button"
+                    onClick={() => updateNumberField("play_count", -1)}
+                  >
+                    -
+                  </button>
+                  <input
+                    id="edit-play-count"
+                    min="0"
+                    type={editForm.play_count === "various" ? "text" : "number"}
+                    value={editForm.play_count}
+                    onChange={(event) =>
+                      setEditForm((currentForm) => ({
+                        ...currentForm,
+                        play_count: String(
+                          Math.max(
+                            0,
+                            Number.parseInt(event.target.value, 10) || 0,
+                          ),
+                        ),
+                      }))
+                    }
+                  />
+                  <button
+                    aria-label="Increase played count"
+                    type="button"
+                    onClick={() => updateNumberField("play_count", 1)}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button type="button" onClick={saveSelectedVideo}>
+            Save Selected Videos
+          </button>
+        </>
+      );
+    }
+
+    if (!selectedVideo) {
+      return <p>Select a video.</p>;
+    }
+
+    if (!isRightPanelEditing) {
+      return (
+        <>
+          {renderRightPanelDetailToggle()}
+          {renderSelectedVideosActorArtwork([selectedVideo])}
+          {renderVideoReadOnlyDetails(editForm, isExtendedRightPanel, true)}
+          {!isLanBrowser && (
+            <button type="button" onClick={() => setIsRightPanelEditing(true)}>
+              Edit
+            </button>
+          )}
+          <button type="button" onClick={() => openVideo(selectedVideo.file_path)}>
+            Open
+          </button>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderRightPanelDetailToggle()}
+        {renderSelectedVideosActorArtwork([selectedVideo])}
+
+        <div className="edit-form">
+          {isExtendedRightPanel && (
+            <>
+              {rightPanelInfo.filename && (
+                <div>
+                  <span>Filename</span>
+                  <p>{selectedVideo.filename}</p>
+                </div>
+              )}
+              {rightPanelInfo.file_path && (
+                <div>
+                  <span>File path</span>
+                  <p>{selectedVideo.file_path}</p>
+                </div>
+              )}
+            </>
+          )}
+          {rightPanelInfo.title && (
             <div>
               <label htmlFor="edit-title">Title</label>
               <input
@@ -4578,12 +5820,28 @@ function App() {
                 }
               />
             </div>
-            {renderAutocompleteInput("actor", "Actor", "edit-actor")}
-            {renderAutocompleteInput("genre", "Genre", "edit-genre")}
-            {isExtendedRightPanel && (
-              <>
+          )}
+          {rightPanelInfo.actor &&
+            renderAutocompleteInput("actor", "Actor", "edit-actor")}
+          {rightPanelInfo.director &&
+            renderAutocompleteInput("director", "Director", "edit-director")}
+          {rightPanelInfo.publisher &&
+            renderAutocompleteInput("publisher", "Publisher", "edit-publisher")}
+          {rightPanelInfo.writers &&
+            renderAutocompleteInput("writers", "Writers", "edit-writers")}
+          {rightPanelInfo.genre &&
+            renderAutocompleteInput("genre", "Genre", "edit-genre")}
+          {rightPanelInfo.sub_genre &&
+            renderAutocompleteInput(
+              "sub_genre",
+              "Sub-genre",
+              "edit-sub-genre",
+            )}
+          {isExtendedRightPanel && (
+            <>
+              {rightPanelInfo.year && (
                 <div>
-                  <label htmlFor="edit-date">Date</label>
+                  <label htmlFor="edit-date">Year</label>
                   <input
                     id="edit-date"
                     value={editForm.date}
@@ -4595,6 +5853,8 @@ function App() {
                     }
                   />
                 </div>
+              )}
+              {rightPanelInfo.backup_date && (
                 <div>
                   <label htmlFor="edit-backup-date">Backup date</label>
                   <input
@@ -4608,6 +5868,8 @@ function App() {
                     }
                   />
                 </div>
+              )}
+              {rightPanelInfo.backup_location && (
                 <div>
                   <label htmlFor="edit-backup-location">Backup location</label>
                   <input
@@ -4621,6 +5883,8 @@ function App() {
                     }
                   />
                 </div>
+              )}
+              {rightPanelInfo.notes && (
                 <div>
                   <label htmlFor="edit-notes">Notes</label>
                   <textarea
@@ -4634,17 +5898,14 @@ function App() {
                     }
                   />
                 </div>
-              </>
-            )}
-            <label className="checkbox-field" htmlFor="edit-explicit-content-multi">
+              )}
+            </>
+          )}
+          {rightPanelInfo.explicit_content && (
+            <label className="checkbox-field" htmlFor="edit-explicit-content">
               <input
                 checked={editForm.explicit_content === "true"}
-                id="edit-explicit-content-multi"
-                ref={(input) => {
-                  if (input) {
-                    input.indeterminate = editForm.explicit_content === "various";
-                  }
-                }}
+                id="edit-explicit-content"
                 type="checkbox"
                 onChange={(event) =>
                   setEditForm((currentForm) => ({
@@ -4655,13 +5916,18 @@ function App() {
               />
               Explicit content
             </label>
+          )}
+          {rightPanelInfo.rating && (
             <div>
               <label htmlFor="edit-rating">Rating</label>
               <div className="rating-editor">
-                {editForm.rating === "various" ? (
-                  <p>various</p>
-                ) : (
-                  renderRatingStars(Number.parseInt(editForm.rating, 10) || 0)
+                {renderRatingStars(
+                  Number.parseInt(editForm.rating, 10) || 0,
+                  (rating) =>
+                    setEditForm((currentForm) => ({
+                      ...currentForm,
+                      rating: String(rating),
+                    })),
                 )}
                 <div className="number-stepper">
                   <button
@@ -4675,7 +5941,7 @@ function App() {
                     id="edit-rating"
                     max="10"
                     min="0"
-                    type={editForm.rating === "various" ? "text" : "number"}
+                    type="number"
                     value={editForm.rating}
                     onChange={(event) =>
                       setEditForm((currentForm) => ({
@@ -4696,8 +5962,36 @@ function App() {
                     +
                   </button>
                 </div>
+                <p>
+                  {Number.parseInt(editForm.rating, 10) || 0}/10,{" "}
+                  {formatRatingLabel(Number.parseInt(editForm.rating, 10) || 0)}
+                </p>
               </div>
             </div>
+          )}
+          {isExtendedRightPanel && (
+            <>
+              {rightPanelInfo.filesize && (
+                <div>
+                  <span>Filesize</span>
+                  <p>{formatFileSize(selectedVideo.filesize) || "-"}</p>
+                </div>
+              )}
+              {rightPanelInfo.resolution && (
+                <div>
+                  <span>Resolution</span>
+                  <p>{selectedVideo.resolution || "-"}</p>
+                </div>
+              )}
+              {rightPanelInfo.bitrate && (
+                <div>
+                  <span>Bitrate</span>
+                  <p>{selectedVideo.bitrate || "-"}</p>
+                </div>
+              )}
+            </>
+          )}
+          {rightPanelInfo.play_count && (
             <div>
               <label htmlFor="edit-play-count">Played count</label>
               <div className="number-stepper">
@@ -4711,7 +6005,7 @@ function App() {
                 <input
                   id="edit-play-count"
                   min="0"
-                  type={editForm.play_count === "various" ? "text" : "number"}
+                  type="number"
                   value={editForm.play_count}
                   onChange={(event) =>
                     setEditForm((currentForm) => ({
@@ -4731,233 +6025,14 @@ function App() {
                 </button>
               </div>
             </div>
-          </div>
-
-          <button type="button" onClick={saveSelectedVideo}>
-            Save Selected Videos
-          </button>
-        </>
-      );
-    }
-
-    if (!selectedVideo) {
-      return <p>Select a video.</p>;
-    }
-
-    if (!isRightPanelEditing) {
-      return (
-        <>
-          {renderRightPanelDetailToggle()}
-          {renderSelectedVideosActorArtwork([selectedVideo])}
-          {renderVideoReadOnlyDetails(editForm, isExtendedRightPanel, true)}
-          <button type="button" onClick={() => setIsRightPanelEditing(true)}>
-            Edit
-          </button>
-          <button type="button" onClick={() => openVideo(selectedVideo.file_path)}>
-            Open
-          </button>
-        </>
-      );
-    }
-
-    return (
-      <>
-        {renderRightPanelDetailToggle()}
-        {renderSelectedVideosActorArtwork([selectedVideo])}
-
-        <div className="edit-form">
-          {isExtendedRightPanel && (
-            <>
-              <div>
-                <span>Filename</span>
-                <p>{selectedVideo.filename}</p>
-              </div>
-              <div>
-                <span>File path</span>
-                <p>{selectedVideo.file_path}</p>
-              </div>
-            </>
           )}
-          <div>
-            <label htmlFor="edit-title">Title</label>
-            <input
-              id="edit-title"
-              value={editForm.title}
-              onChange={(event) =>
-                setEditForm((currentForm) => ({
-                  ...currentForm,
-                  title: event.target.value,
-                }))
-              }
-            />
-          </div>
-          {renderAutocompleteInput("actor", "Actor", "edit-actor")}
-          {renderAutocompleteInput("genre", "Genre", "edit-genre")}
           {isExtendedRightPanel && (
-            <>
+            rightPanelInfo.artwork_thumbnail && (
               <div>
-                <label htmlFor="edit-date">Date</label>
-                <input
-                  id="edit-date"
-                  value={editForm.date}
-                  onChange={(event) =>
-                    setEditForm((currentForm) => ({
-                      ...currentForm,
-                      date: event.target.value,
-                    }))
-                  }
-                />
+                <span>Artwork/thumbnail</span>
+                <p>{selectedVideo.artwork_thumbnail || "-"}</p>
               </div>
-              <div>
-                <label htmlFor="edit-backup-date">Backup date</label>
-                <input
-                  id="edit-backup-date"
-                  value={editForm.backup_date}
-                  onChange={(event) =>
-                    setEditForm((currentForm) => ({
-                      ...currentForm,
-                      backup_date: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-backup-location">Backup location</label>
-                <input
-                  id="edit-backup-location"
-                  value={editForm.backup_location}
-                  onChange={(event) =>
-                    setEditForm((currentForm) => ({
-                      ...currentForm,
-                      backup_location: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-notes">Notes</label>
-                <textarea
-                  id="edit-notes"
-                  value={editForm.notes}
-                  onChange={(event) =>
-                    setEditForm((currentForm) => ({
-                      ...currentForm,
-                      notes: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </>
-          )}
-          <label className="checkbox-field" htmlFor="edit-explicit-content">
-            <input
-              checked={editForm.explicit_content === "true"}
-              id="edit-explicit-content"
-              type="checkbox"
-              onChange={(event) =>
-                setEditForm((currentForm) => ({
-                  ...currentForm,
-                  explicit_content: event.target.checked ? "true" : "false",
-                }))
-              }
-            />
-            Explicit content
-          </label>
-          <div>
-            <label htmlFor="edit-rating">Rating</label>
-            <div className="rating-editor">
-              {renderRatingStars(Number.parseInt(editForm.rating, 10) || 0)}
-              <div className="number-stepper">
-                <button
-                  aria-label="Decrease rating"
-                  type="button"
-                  onClick={() => updateNumberField("rating", -1, 10)}
-                >
-                  -
-                </button>
-                <input
-                  id="edit-rating"
-                  max="10"
-                  min="0"
-                  type="number"
-                  value={editForm.rating}
-                  onChange={(event) =>
-                    setEditForm((currentForm) => ({
-                      ...currentForm,
-                      rating: String(
-                        clampRating(Number.parseInt(event.target.value, 10) || 0),
-                      ),
-                    }))
-                  }
-                />
-                <button
-                  aria-label="Increase rating"
-                  type="button"
-                  onClick={() => updateNumberField("rating", 1, 10)}
-                >
-                  +
-                </button>
-              </div>
-              <p>
-                {Number.parseInt(editForm.rating, 10) || 0}/10,{" "}
-                {formatRatingLabel(Number.parseInt(editForm.rating, 10) || 0)}
-              </p>
-            </div>
-          </div>
-          {isExtendedRightPanel && (
-            <>
-              <div>
-                <span>Filesize</span>
-                <p>{formatFileSize(selectedVideo.filesize) || "-"}</p>
-              </div>
-              <div>
-                <span>Resolution</span>
-                <p>{selectedVideo.resolution || "-"}</p>
-              </div>
-              <div>
-                <span>Bitrate</span>
-                <p>{selectedVideo.bitrate || "-"}</p>
-              </div>
-            </>
-          )}
-          <div>
-            <label htmlFor="edit-play-count">Played count</label>
-            <div className="number-stepper">
-              <button
-                aria-label="Decrease played count"
-                type="button"
-                onClick={() => updateNumberField("play_count", -1)}
-              >
-                -
-              </button>
-              <input
-                id="edit-play-count"
-                min="0"
-                type="number"
-                value={editForm.play_count}
-                onChange={(event) =>
-                  setEditForm((currentForm) => ({
-                    ...currentForm,
-                    play_count: String(
-                      Math.max(0, Number.parseInt(event.target.value, 10) || 0),
-                    ),
-                  }))
-                }
-              />
-              <button
-                aria-label="Increase played count"
-                type="button"
-                onClick={() => updateNumberField("play_count", 1)}
-              >
-                +
-              </button>
-            </div>
-          </div>
-          {isExtendedRightPanel && (
-            <div>
-              <span>Artwork/thumbnail</span>
-              <p>{selectedVideo.artwork_thumbnail || "-"}</p>
-            </div>
+            )
           )}
         </div>
 
@@ -4974,8 +6049,11 @@ function App() {
   }
 
   return (
-    <main className="app-layout" style={appFontSizeVars()}>
-      {!hasDatabase && (
+    <main
+      className={isLanBrowser ? "app-layout lan-browser" : "app-layout"}
+      style={appFontSizeVars()}
+    >
+      {!hasDatabase && !isLanBrowser && (
         <button type="button" onClick={selectFolder}>
           Select Folder
         </button>
@@ -5004,74 +6082,129 @@ function App() {
                 }
                 navigateToView("all-videos");
                 setSelectedActor("");
+                setActorVideosActor("");
                 setSelectedGenre("");
                 setSelectedRating(null);
+                setSelectedMetadataGroup("");
                 setRightPanelMode("video");
                 setIsRightPanelEditing(false);
               }}
             >
               All Videos
             </button>
-            <button
-              className={activeView === "actors" ? "nav-item active" : "nav-item"}
-              type="button"
-              onClick={() => {
-                if (
-                  activeViewRef.current === "actors" &&
-                  (selectedActor || selectedGenre || selectedRating !== null)
-                ) {
-                  pushNavigationSnapshot();
+            {leftPanelTags.actors && (
+              <button
+                className={
+                  activeView === "actors" ? "nav-item active" : "nav-item"
                 }
-                navigateToView("actors");
-                setSelectedActor("");
-                setSelectedGenre("");
-                setSelectedRating(null);
-                setRightPanelMode("actor");
-                setIsRightPanelEditing(false);
-              }}
-            >
-              Actors
-            </button>
-            <button
-              className={activeView === "genres" ? "nav-item active" : "nav-item"}
-              type="button"
-              onClick={() => {
-                if (
-                  activeViewRef.current === "genres" &&
-                  (selectedActor || selectedGenre || selectedRating !== null)
-                ) {
-                  pushNavigationSnapshot();
+                type="button"
+                onClick={() => {
+                  if (
+                    activeViewRef.current === "actors" &&
+                    (selectedActor || selectedGenre || selectedRating !== null)
+                  ) {
+                    pushNavigationSnapshot();
+                  }
+                  navigateToView("actors");
+                  setSelectedActor("");
+                  setActorVideosActor("");
+                  setSelectedGenre("");
+                  setSelectedRating(null);
+                  setSelectedMetadataGroup("");
+                  setRightPanelMode("actor");
+                  setIsRightPanelEditing(false);
+                }}
+              >
+                Actors
+              </button>
+            )}
+            {([
+              ["directors", "Directors"],
+              ["years", "Years"],
+              ["publishers", "Publishers"],
+              ["writers", "Writers"],
+              ["subgenres", "Sub-genres"],
+            ] as const)
+              .filter(([view]) => leftPanelTags[view])
+              .map(([view, label]) => (
+                <button
+                  className={
+                    activeView === view ? "nav-item active" : "nav-item"
+                  }
+                  key={view}
+                  type="button"
+                  onClick={() => {
+                    if (
+                      activeViewRef.current === view &&
+                      (selectedMetadataGroup ||
+                        selectedActor ||
+                        selectedGenre ||
+                        selectedRating !== null)
+                    ) {
+                      pushNavigationSnapshot();
+                    }
+                    navigateToView(view);
+                    setSelectedMetadataGroup("");
+                    setSelectedActor("");
+                    setSelectedGenre("");
+                    setSelectedRating(null);
+                    setRightPanelMode("metadata");
+                    setIsRightPanelEditing(false);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            {leftPanelTags.genres && (
+              <button
+                className={
+                  activeView === "genres" ? "nav-item active" : "nav-item"
                 }
-                navigateToView("genres");
-                setSelectedActor("");
-                setSelectedGenre("");
-                setSelectedRating(null);
-                setRightPanelMode("genre");
-                setIsRightPanelEditing(false);
-              }}
-            >
-              Genres
-            </button>
-            <button
-              className={activeView === "ratings" ? "nav-item active" : "nav-item"}
-              type="button"
-              onClick={() => {
-                if (
-                  activeViewRef.current === "ratings" &&
-                  (selectedActor || selectedGenre || selectedRating !== null)
-                ) {
-                  pushNavigationSnapshot();
+                type="button"
+                onClick={() => {
+                  if (
+                    activeViewRef.current === "genres" &&
+                    (selectedActor || selectedGenre || selectedRating !== null)
+                  ) {
+                    pushNavigationSnapshot();
+                  }
+                  navigateToView("genres");
+                  setSelectedActor("");
+                  setSelectedGenre("");
+                  setSelectedRating(null);
+                  setSelectedMetadataGroup("");
+                  setRightPanelMode("genre");
+                  setIsRightPanelEditing(false);
+                }}
+              >
+                Genres
+              </button>
+            )}
+            {leftPanelTags.ratings && (
+              <button
+                className={
+                  activeView === "ratings" ? "nav-item active" : "nav-item"
                 }
-                navigateToView("ratings");
-                setSelectedActor("");
-                setSelectedGenre("");
-                setSelectedRating(null);
-                setRightPanelMode("rating");
-                setIsRightPanelEditing(false);
-              }}
-            >
-              Ratings
-            </button>
+                type="button"
+                onClick={() => {
+                  if (
+                    activeViewRef.current === "ratings" &&
+                    (selectedActor || selectedGenre || selectedRating !== null)
+                  ) {
+                    pushNavigationSnapshot();
+                  }
+                  navigateToView("ratings");
+                  setSelectedActor("");
+                  setSelectedGenre("");
+                  setSelectedRating(null);
+                  setSelectedMetadataGroup("");
+                  setRightPanelMode("rating");
+                  setIsRightPanelEditing(false);
+                }}
+              >
+                Ratings
+              </button>
+            )}
             <button
               className={activeView === "settings" ? "nav-item active" : "nav-item"}
               type="button"
@@ -5086,6 +6219,7 @@ function App() {
                 setSelectedActor("");
                 setSelectedGenre("");
                 setSelectedRating(null);
+                setSelectedMetadataGroup("");
                 setRightPanelMode("video");
                 setIsRightPanelEditing(false);
               }}
@@ -5101,133 +6235,172 @@ function App() {
           onClick={() => setIsLeftPanelCollapsed((collapsed) => !collapsed)}
         />
 
-        <section className="content-shell">
-          {activeView !== "settings" && (
+        <section
+          className={
+            [
+              "content-shell",
+              activeView !== "settings" ? "with-top-panel" : "",
+              isTopPanelCollapsed ? "top-collapsed" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")
+          }
+        >
+          {activeView !== "settings" && !isTopPanelCollapsed && (
             <div className="top-panel">
-            <div className="top-panel-left">
-              <button
-                className="back-button"
-                type="button"
-                onClick={goBackView}
-              >
-                Back
-              </button>
-              <div className="filter-controls">
-              <label htmlFor="filter-videos">
-                Filter
-                <input
-                  id="filter-videos"
-                  value={filterText}
-                  onChange={(event) => setFilterText(event.target.value)}
-                />
-              </label>
-              <label htmlFor="filter-actor">
-                Actor
-                <select
-                  id="filter-actor"
-                  value={actorFilter}
-                  onChange={(event) => setActorFilter(event.target.value)}
+              <div className="top-panel-left">
+                <button
+                  className="back-button"
+                  type="button"
+                  onClick={goBackView}
                 >
-                  <option value="all">All actors</option>
-                  {actorFilterOptions().map((actor) => (
-                    <option key={actor} value={actor}>
-                      {actor}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <details className="multi-filter">
-                <summary>{genreFilterLabel()}</summary>
-                <div className="multi-filter-menu">
-                  <button type="button" onClick={() => setGenreFilters([])}>
-                    All genres
-                  </button>
-                  {genreFilterOptions().map((genre) => (
-                    <label key={genre}>
-                      <input
-                        checked={genreFilters.includes(genre)}
-                        type="checkbox"
-                        onChange={() => toggleGenreFilter(genre)}
-                      />
-                      {genre}
-                    </label>
-                  ))}
-                </div>
-              </details>
-              <details className="multi-filter">
-                <summary>{ratingFilterLabel()}</summary>
-                <div className="multi-filter-menu">
-                  <button type="button" onClick={() => setRatingFilters([])}>
-                    All ratings
-                  </button>
-                  {ratingFilterOptions().map((rating) => (
-                    <label key={rating}>
-                      <input
-                        checked={ratingFilters.includes(rating)}
-                        type="checkbox"
-                        onChange={() => toggleRatingFilter(rating)}
-                      />
-                      {formatRatingLabel(rating)}
-                    </label>
-                  ))}
-                </div>
+                  Back
+                </button>
+                <div className="filter-controls">
+                  {renderSearchFilterControl()}
+                  <label htmlFor="filter-actor">
+                    Actor
+                    <select
+                      id="filter-actor"
+                      value={actorFilter}
+                      onChange={(event) => setActorFilter(event.target.value)}
+                    >
+                      <option value="all">All actors</option>
+                      {actorFilterOptions().map((actor) => (
+                        <option key={actor} value={actor}>
+                          {actor}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <details className="multi-filter" ref={genreFilterRef}>
+                    <summary>{genreFilterLabel()}</summary>
+                    <div className="multi-filter-menu">
+                      <button type="button" onClick={() => setGenreFilters([])}>
+                        All genres
+                      </button>
+                      {genreFilterOptions().map((genre) => (
+                        <label
+                          key={genre}
+                          onDoubleClick={() => selectAllOtherGenreFilters(genre)}
+                        >
+                          <input
+                            checked={genreFilters.includes(genre)}
+                            type="checkbox"
+                            onChange={() => toggleGenreFilter(genre)}
+                          />
+                          {genre}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                  <details className="multi-filter" ref={subGenreFilterRef}>
+                    <summary>{subGenreFilterLabel()}</summary>
+                    <div className="multi-filter-menu">
+                      <button type="button" onClick={() => setSubGenreFilters([])}>
+                        All sub-genres
+                      </button>
+                      {subGenreFilterOptions().map((subGenre) => (
+                        <label
+                          key={subGenre}
+                          onDoubleClick={() =>
+                            selectAllOtherSubGenreFilters(subGenre)
+                          }
+                        >
+                          <input
+                            checked={subGenreFilters.includes(subGenre)}
+                            type="checkbox"
+                            onChange={() => toggleSubGenreFilter(subGenre)}
+                          />
+                          {subGenre}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                  <details className="multi-filter" ref={ratingFilterRef}>
+                    <summary>{ratingFilterLabel()}</summary>
+                    <div className="multi-filter-menu">
+                      <button type="button" onClick={() => setRatingFilters([])}>
+                        All ratings
+                      </button>
+                      {ratingFilterOptions().map((rating) => (
+                        <label key={rating}>
+                          <input
+                            checked={ratingFilters.includes(rating)}
+                            type="checkbox"
+                            onChange={() => toggleRatingFilter(rating)}
+                          />
+                          {formatRatingLabel(rating)}
+                        </label>
+                      ))}
+                    </div>
                   </details>
                 </div>
-            </div>
-            <div className="sort-controls">
-              <div className="view-mode-toggle" aria-label="Video view mode">
-                <button
-                  className={mainViewMode === "grid" ? "active" : ""}
-                  type="button"
-                  onClick={() => setMainViewMode("grid")}
-                >
-                  Grid
-                </button>
-                <button
-                  className={mainViewMode === "list" ? "active" : ""}
-                  type="button"
-                  onClick={() => setMainViewMode("list")}
-                >
-                  List
-                </button>
               </div>
-              <label htmlFor="sort-videos">
-                Sort
-                <select
-                  id="sort-videos"
-                  value={sortMode}
-                  onChange={(event) =>
-                    setSortMode(event.target.value as SortMode)
-                  }
-                >
-                  <option value="name">Name</option>
-                  <option value="director">Director name</option>
-                  <option value="played-count">Played count</option>
-                  <option value="rating">Rating</option>
-                  <option value="file-size">File size</option>
-                  <option value="added">Added</option>
-                </select>
-              </label>
-              <label htmlFor="sort-videos-secondary">
-                Then sort
-                <select
-                  id="sort-videos-secondary"
-                  value={secondarySortMode}
-                  onChange={(event) =>
-                    setSecondarySortMode(event.target.value as SecondarySortMode)
-                  }
-                >
-                  <option value="none">None</option>
-                  <option value="name">Name</option>
-                  <option value="director">Director name</option>
-                  <option value="played-count">Played count</option>
-                  <option value="rating">Rating</option>
-                  <option value="file-size">File size</option>
-                  <option value="added">Added</option>
-                </select>
-              </label>
+              <div className="sort-controls">
+                <div className="view-mode-toggle" aria-label="Video view mode">
+                  <button
+                    className={mainViewMode === "grid" ? "active" : ""}
+                    type="button"
+                    onClick={() => setMainViewMode("grid")}
+                  >
+                    Grid
+                  </button>
+                  <button
+                    className={mainViewMode === "list" ? "active" : ""}
+                    type="button"
+                    onClick={() => setMainViewMode("list")}
+                  >
+                    List
+                  </button>
+                </div>
+                <label htmlFor="sort-videos">
+                  Sort
+                  <select
+                    id="sort-videos"
+                    value={sortMode}
+                    onChange={(event) =>
+                      setSortMode(event.target.value as SortMode)
+                    }
+                  >
+                    <option value="name">Name</option>
+                    <option value="director">Director name</option>
+                    <option value="played-count">Played count</option>
+                    <option value="rating">Rating</option>
+                    <option value="file-size">File size</option>
+                    <option value="added">Added</option>
+                  </select>
+                </label>
+                <label htmlFor="sort-videos-secondary">
+                  Then sort
+                  <select
+                    id="sort-videos-secondary"
+                    value={secondarySortMode}
+                    onChange={(event) =>
+                      setSecondarySortMode(
+                        event.target.value as SecondarySortMode,
+                      )
+                    }
+                  >
+                    <option value="none">None</option>
+                    <option value="name">Name</option>
+                    <option value="director">Director name</option>
+                    <option value="played-count">Played count</option>
+                    <option value="rating">Rating</option>
+                    <option value="file-size">File size</option>
+                    <option value="added">Added</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            </div>
+          )}
+          {activeView !== "settings" && (
+            <button
+              aria-label={isTopPanelCollapsed ? "Show top panel" : "Hide top panel"}
+              className="panel-divider top-divider"
+              type="button"
+              onClick={() => setIsTopPanelCollapsed((collapsed) => !collapsed)}
+            />
           )}
 
           <section
@@ -5240,7 +6413,7 @@ function App() {
                 .filter(Boolean)
                 .join(" ")
             }
-            style={{ "--grid-card-min": `${gridSize}px` } as CSSProperties}
+            style={{ "--grid-card-max": `${gridSize}px` } as CSSProperties}
           >
             <div>{renderMainGrid()}</div>
 
@@ -5257,7 +6430,16 @@ function App() {
                   }
                 />
                 {!isRightPanelCollapsed && (
-                  <aside className="details-panel">{renderRightPanel()}</aside>
+                  <aside
+                    className={
+                      rightPanelMode === "video" &&
+                      rightPanelDetailMode === "extended"
+                        ? "details-panel extended-details-panel"
+                        : "details-panel"
+                    }
+                  >
+                    {renderRightPanel()}
+                  </aside>
                 )}
               </>
             )}
@@ -5277,6 +6459,31 @@ function App() {
       {renderFileOperationProgressModal("Creating Backup", backupProgress, isBackingUp)}
       {renderFileOperationProgressModal("Restoring Backup", restoreProgress, isRestoring)}
       {renderHoverPreview()}
+
+      {isActorModalOpen && selectedActorGroup() && (
+        <div
+          className="modal-backdrop actor-modal-backdrop"
+          onClick={() => setIsActorModalOpen(false)}
+        >
+          <section
+            aria-label={`${selectedActorGroup()!.name} details`}
+            aria-modal="true"
+            className="details-panel actor-modal-dialog"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              aria-label="Close actor details"
+              className="actor-modal-close"
+              type="button"
+              onClick={() => setIsActorModalOpen(false)}
+            >
+              Close
+            </button>
+            {renderRightPanel(false)}
+          </section>
+        </div>
+      )}
 
       {actorCrop && (
         <div className="modal-backdrop">
