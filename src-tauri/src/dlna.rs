@@ -144,8 +144,7 @@ fn respond_to_search(socket: &UdpSocket, sender: SocketAddr, message: &str) {
     }
 }
 
-pub fn device_description() -> String {
-    let base = lan_server::public_url();
+pub fn device_description(base: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="utf-8"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0" xmlns:dlna="urn:schemas-dlna-org:device-1-0">
@@ -240,10 +239,11 @@ pub fn connection_manager_description() -> &'static str {
 
 pub fn handle_content_directory(mut request: Request, app: &tauri::AppHandle) {
     let action = soap_action(&request);
+    let base_url = request_base_url(&request).unwrap_or_else(lan_server::public_url);
     let mut body = String::new();
     let _ = request.as_reader().read_to_string(&mut body);
     let response = match action.as_deref() {
-        Some("Browse") => browse_response(app, &body),
+        Some("Browse") => browse_response(app, &body, &base_url),
         Some("GetSearchCapabilities") => Ok(action_response(
             CONTENT_DIRECTORY_TYPE,
             "GetSearchCapabilities",
@@ -304,7 +304,11 @@ fn soap_action(request: &Request) -> Option<String> {
     Some(value.rsplit('#').next()?.to_string())
 }
 
-fn browse_response(app: &tauri::AppHandle, body: &str) -> Result<String, (u16, &'static str)> {
+fn browse_response(
+    app: &tauri::AppHandle,
+    body: &str,
+    base_url: &str,
+) -> Result<String, (u16, &'static str)> {
     let object_id = xml_value(body, "ObjectID").unwrap_or_else(|| "0".into());
     let browse_flag =
         xml_value(body, "BrowseFlag").unwrap_or_else(|| "BrowseDirectChildren".into());
@@ -316,7 +320,13 @@ fn browse_response(app: &tauri::AppHandle, body: &str) -> Result<String, (u16, &
         .unwrap_or(0);
     let catalog = load_catalog(app).map_err(|_| (501, "Action Failed"))?;
     let browse = catalog
-        .browse(&object_id, &browse_flag, starting_index, requested_count)
+        .browse(
+            &object_id,
+            &browse_flag,
+            starting_index,
+            requested_count,
+            base_url,
+        )
         .ok_or((701, "No Such Object"))?;
     let fields = format!(
         "<Result>{}</Result><NumberReturned>{}</NumberReturned><TotalMatches>{}</TotalMatches><UpdateID>1</UpdateID>",
@@ -406,12 +416,13 @@ impl Catalog {
         browse_flag: &str,
         starting_index: usize,
         requested_count: usize,
+        base_url: &str,
     ) -> Option<BrowseResult> {
         let metadata = browse_flag == "BrowseMetadata";
         let objects = if metadata {
-            vec![self.metadata(object_id)?]
+            vec![self.metadata(object_id, base_url)?]
         } else {
-            self.children(object_id)?
+            self.children(object_id, base_url)?
         };
         let total_matches = objects.len();
         let end = if requested_count == 0 {
@@ -436,7 +447,7 @@ impl Catalog {
         })
     }
 
-    fn metadata(&self, object_id: &str) -> Option<String> {
+    fn metadata(&self, object_id: &str, base_url: &str) -> Option<String> {
         match object_id {
             "0" => Some(container_xml("0", "-1", "ArchiveKong", 4)),
             "all" => Some(container_xml("all", "0", "All Videos", self.videos.len())),
@@ -471,12 +482,12 @@ impl Catalog {
                 .videos
                 .iter()
                 .find(|video| video_id(&video.file_path) == object_id)
-                .map(|video| item_xml(video, "all")),
+                .map(|video| item_xml(video, "all", base_url)),
             _ => None,
         }
     }
 
-    fn children(&self, object_id: &str) -> Option<Vec<String>> {
+    fn children(&self, object_id: &str, base_url: &str) -> Option<Vec<String>> {
         match object_id {
             "0" => Some(vec![
                 container_xml("all", "0", "All Videos", self.videos.len()),
@@ -502,15 +513,21 @@ impl Catalog {
             "all" => Some(
                 self.videos
                     .iter()
-                    .map(|video| item_xml(video, "all"))
+                    .map(|video| item_xml(video, "all", base_url))
                     .collect(),
             ),
             "actors" => Some(self.group_containers("actors", "actor", GroupKind::Actor)),
             "genres" => Some(self.group_containers("genres", "genre", GroupKind::Genre)),
             "years" => Some(self.group_containers("years", "year", GroupKind::Year)),
-            _ if object_id.starts_with("actor:") => self.group_items(object_id, GroupKind::Actor),
-            _ if object_id.starts_with("genre:") => self.group_items(object_id, GroupKind::Genre),
-            _ if object_id.starts_with("year:") => self.group_items(object_id, GroupKind::Year),
+            _ if object_id.starts_with("actor:") => {
+                self.group_items(object_id, GroupKind::Actor, base_url)
+            }
+            _ if object_id.starts_with("genre:") => {
+                self.group_items(object_id, GroupKind::Genre, base_url)
+            }
+            _ if object_id.starts_with("year:") => {
+                self.group_items(object_id, GroupKind::Year, base_url)
+            }
             _ if object_id.starts_with("video:") => Some(Vec::new()),
             _ => None,
         }
@@ -555,13 +572,13 @@ impl Catalog {
         (count > 0).then(|| container_xml(object_id, parent, &name, count))
     }
 
-    fn group_items(&self, object_id: &str, kind: GroupKind) -> Option<Vec<String>> {
+    fn group_items(&self, object_id: &str, kind: GroupKind, base_url: &str) -> Option<Vec<String>> {
         let name = decode_group_id(object_id)?;
         Some(
             self.videos
                 .iter()
                 .filter(|video| group_values(video, kind).contains(&name))
-                .map(|video| item_xml(video, object_id))
+                .map(|video| item_xml(video, object_id, base_url))
                 .collect(),
         )
     }
@@ -652,8 +669,7 @@ fn container_xml(id: &str, parent_id: &str, title: &str, child_count: usize) -> 
     )
 }
 
-fn item_xml(video: &DlnaVideo, parent_id: &str) -> String {
-    let base = lan_server::public_url();
+fn item_xml(video: &DlnaVideo, parent_id: &str, base: &str) -> String {
     let media_url = format!(
         "{base}/api/media?path={}",
         utf8_percent_encode(&video.file_path, NON_ALPHANUMERIC)
@@ -713,4 +729,15 @@ fn decode_group_id(object_id: &str) -> Option<String> {
 
 fn header(name: &str, value: &str) -> Header {
     Header::from_bytes(name.as_bytes(), value.as_bytes()).expect("valid DLNA HTTP header")
+}
+
+fn request_base_url(request: &Request) -> Option<String> {
+    let host = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Host"))?
+        .value
+        .as_str()
+        .trim();
+    (!host.is_empty()).then(|| format!("http://{host}"))
 }

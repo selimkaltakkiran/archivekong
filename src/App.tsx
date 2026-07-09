@@ -73,6 +73,9 @@ type AppSettings = {
   right_panel_info?: RightPanelInfo;
   hide_explicit_content?: boolean;
   explicit_content_password_hash?: string;
+  enable_remote_auth?: boolean;
+  remote_username?: string;
+  remote_password_hash?: string;
   sort_mode?: SortMode;
   secondary_sort_mode?: SecondarySortMode;
 };
@@ -521,6 +524,9 @@ function App() {
   const [hideExplicitContent, setHideExplicitContent] = useState(false);
   const [explicitContentPasswordHash, setExplicitContentPasswordHash] =
     useState("");
+  const [enableRemoteAuth, setEnableRemoteAuth] = useState(false);
+  const [remoteUsername, setRemoteUsername] = useState("");
+  const [remotePasswordHash, setRemotePasswordHash] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [editForm, setEditForm] = useState<VideoEditForm>({
     title: "",
@@ -689,6 +695,9 @@ function App() {
         setExplicitContentPasswordHash(
           settings.explicit_content_password_hash ?? "",
         );
+        setEnableRemoteAuth(settings.enable_remote_auth ?? false);
+        setRemoteUsername(settings.remote_username ?? "");
+        setRemotePasswordHash(settings.remote_password_hash ?? "");
         setSortMode(settings.sort_mode ?? "played-count");
         setSecondarySortMode(settings.secondary_sort_mode ?? "rating");
         settingsLoaded.current = true;
@@ -778,6 +787,9 @@ function App() {
       rightPanelInfo,
       hideExplicitContent,
       explicitContentPasswordHash,
+      enableRemoteAuth,
+      remoteUsername,
+      remotePasswordHash,
       sortMode,
       secondarySortMode,
     };
@@ -796,6 +808,8 @@ function App() {
           left_panel_tags: leftPanelTags,
           right_panel_info: rightPanelInfo,
           hide_explicit_content: hideExplicitContent,
+          enable_remote_auth: enableRemoteAuth,
+          remote_username: remoteUsername,
           sort_mode: sortMode,
           secondary_sort_mode: secondarySortMode,
         } satisfies AppSettings),
@@ -818,6 +832,9 @@ function App() {
     rightPanelInfo,
     hideExplicitContent,
     explicitContentPasswordHash,
+    enableRemoteAuth,
+    remoteUsername,
+    remotePasswordHash,
     sortMode,
     secondarySortMode,
   ]);
@@ -1699,6 +1716,53 @@ function App() {
 
     setErrorMessage("");
     setExplicitContentPasswordHash(await hashPassword(password));
+  }
+
+  async function setRemotePassword() {
+    const password = window.prompt("Set remote access password");
+
+    if (!password) {
+      return false;
+    }
+
+    const confirmation = window.prompt("Confirm remote access password");
+
+    if (password !== confirmation) {
+      setErrorMessage("Passwords did not match.");
+      return false;
+    }
+
+    try {
+      const passwordHash = await invoke<string>("create_remote_password_hash", {
+        password,
+      });
+      setErrorMessage("");
+      setRemotePasswordHash(passwordHash);
+      return true;
+    } catch (error) {
+      setErrorMessage(String(error));
+      return false;
+    }
+  }
+
+  async function toggleRemoteAuth(shouldEnable: boolean) {
+    setErrorMessage("");
+
+    if (!shouldEnable) {
+      setEnableRemoteAuth(false);
+      return;
+    }
+
+    if (!remoteUsername.trim()) {
+      setErrorMessage("Enter a remote access username first.");
+      return;
+    }
+
+    if (!remotePasswordHash && !(await setRemotePassword())) {
+      return;
+    }
+
+    setEnableRemoteAuth(true);
   }
 
   async function toggleHideExplicitContent(shouldHide: boolean) {
@@ -4422,11 +4486,42 @@ function App() {
                   Enable DLNA media server
                 </label>
               </div>
+              <div className="settings-field">
+                <label className="settings-checkbox" htmlFor="enable-remote-auth">
+                  <input
+                    checked={enableRemoteAuth}
+                    id="enable-remote-auth"
+                    type="checkbox"
+                    onChange={(event) => toggleRemoteAuth(event.target.checked)}
+                  />
+                  Require username and password
+                </label>
+              </div>
+              <label>
+                Remote username
+                <input
+                  type="text"
+                  value={remoteUsername}
+                  onChange={(event) => setRemoteUsername(event.target.value)}
+                  placeholder="archivekong"
+                />
+              </label>
+              <button type="button" onClick={setRemotePassword}>
+                {remotePasswordHash
+                  ? "Change Remote Password"
+                  : "Set Remote Password"}
+              </button>
             </>
           )}
           <p>
             Web library:{" "}
             {enableLanAccess ? lanServerUrl || "Starting LAN server..." : "Disabled"}
+          </p>
+          <p>
+            Online access:{" "}
+            {enableRemoteAuth
+              ? "Password protected. Use HTTPS from your reverse proxy."
+              : "Add a username and password before exposing this server online."}
           </p>
           <p>DLNA media server: {enableDlna ? "ArchiveKong" : "Disabled"}</p>
         </div>

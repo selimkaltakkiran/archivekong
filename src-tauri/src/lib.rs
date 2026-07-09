@@ -1,3 +1,8 @@
+use argon2::{
+    password_hash::{PasswordHasher, SaltString},
+    Argon2,
+};
+use rand_core::OsRng;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
@@ -81,6 +86,12 @@ struct AppSettings {
     hide_explicit_content: bool,
     #[serde(default)]
     explicit_content_password_hash: String,
+    #[serde(default)]
+    enable_remote_auth: bool,
+    #[serde(default)]
+    remote_username: String,
+    #[serde(default)]
+    remote_password_hash: String,
     #[serde(default = "default_sort_mode")]
     sort_mode: String,
     #[serde(default = "default_secondary_sort_mode")]
@@ -207,6 +218,9 @@ impl Default for AppSettings {
             right_panel_info: RightPanelInfo::default(),
             hide_explicit_content: false,
             explicit_content_password_hash: String::new(),
+            enable_remote_auth: false,
+            remote_username: String::new(),
+            remote_password_hash: String::new(),
             sort_mode: default_sort_mode(),
             secondary_sort_mode: default_secondary_sort_mode(),
         }
@@ -1811,6 +1825,7 @@ pub fn run() {
             read_image_file,
             load_app_settings,
             save_app_settings,
+            create_remote_password_hash,
             update_actor_thumbnail,
             save_actor_thumbnail,
             update_actor_bio,
@@ -1899,6 +1914,9 @@ fn save_app_settings(
     right_panel_info: RightPanelInfo,
     hide_explicit_content: bool,
     explicit_content_password_hash: String,
+    enable_remote_auth: bool,
+    remote_username: String,
+    remote_password_hash: String,
     sort_mode: String,
     secondary_sort_mode: String,
 ) -> Result<(), String> {
@@ -1914,6 +1932,9 @@ fn save_app_settings(
         right_panel_info,
         hide_explicit_content,
         explicit_content_password_hash,
+        enable_remote_auth,
+        remote_username,
+        remote_password_hash,
         sort_mode,
         secondary_sort_mode,
     };
@@ -1930,6 +1951,19 @@ fn save_app_settings(
         .map_err(|error| format!("Could not create settings JSON: {error}"))?;
 
     fs::write(&path, json).map_err(|error| format!("Could not save settings: {error}"))
+}
+
+#[tauri::command]
+fn create_remote_password_hash(password: String) -> Result<String, String> {
+    if password.is_empty() {
+        return Err("Remote password cannot be empty.".to_string());
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|error| format!("Could not hash remote password: {error}"))
 }
 
 #[tauri::command]

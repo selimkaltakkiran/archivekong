@@ -1,3 +1,8 @@
+use argon2::{
+    password_hash::{PasswordHash, PasswordVerifier},
+    Argon2,
+};
+use base64::{engine::general_purpose, Engine as _};
 use percent_encoding::percent_decode_str;
 use rust_embed::RustEmbed;
 use serde_json::Value;
@@ -102,9 +107,15 @@ fn handle_request(request: Request, app: &tauri::AppHandle, library_index: &Mute
         return;
     }
 
+    if !route.starts_with("/dlna/") && !is_authorized(&request, app) {
+        respond_unauthorized(request);
+        return;
+    }
+
     match route {
         "/dlna/device.xml" if dlna_enabled => {
-            respond_xml(request, 200, crate::dlna::device_description())
+            let base_url = request_base_url(&request).unwrap_or_else(public_url);
+            respond_xml(request, 200, crate::dlna::device_description(&base_url))
         }
         "/dlna/content-directory.xml" if dlna_enabled => respond_xml(
             request,
@@ -171,8 +182,63 @@ fn public_settings(json: &str) -> String {
     };
     if let Some(object) = settings.as_object_mut() {
         object.remove("explicit_content_password_hash");
+        object.remove("remote_password_hash");
     }
     settings.to_string()
+}
+
+#[derive(Default, serde::Deserialize)]
+struct RemoteAuthSettings {
+    #[serde(default)]
+    enable_remote_auth: bool,
+    #[serde(default)]
+    remote_username: String,
+    #[serde(default)]
+    remote_password_hash: String,
+}
+
+fn is_authorized(request: &Request, app: &tauri::AppHandle) -> bool {
+    let Ok(Some(json)) = read_app_file(app, "app-settings.json") else {
+        return true;
+    };
+    let Ok(settings) = serde_json::from_str::<RemoteAuthSettings>(&json) else {
+        return true;
+    };
+    if !settings.enable_remote_auth {
+        return true;
+    }
+    if settings.remote_username.is_empty() || settings.remote_password_hash.is_empty() {
+        return false;
+    }
+
+    let Some((username, password)) = basic_auth_credentials(request) else {
+        return false;
+    };
+    if username != settings.remote_username {
+        return false;
+    }
+
+    let Ok(parsed_hash) = PasswordHash::new(&settings.remote_password_hash) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok()
+}
+
+fn basic_auth_credentials(request: &Request) -> Option<(String, String)> {
+    let value = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Authorization"))?
+        .value
+        .as_str()
+        .trim();
+    let encoded = value.strip_prefix("Basic ")?;
+    let decoded = general_purpose::STANDARD.decode(encoded).ok()?;
+    let credentials = String::from_utf8(decoded).ok()?;
+    let (username, password) = credentials.split_once(':')?;
+    Some((username.to_string(), password.to_string()))
 }
 
 #[derive(Clone, Copy)]
@@ -208,6 +274,17 @@ fn query_value(query: &str, wanted_key: &str) -> Option<String> {
         let (key, value) = part.split_once('=')?;
         (key == wanted_key).then(|| percent_decode_str(value).decode_utf8_lossy().into_owned())
     })
+}
+
+fn request_base_url(request: &Request) -> Option<String> {
+    let host = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Host"))?
+        .value
+        .as_str()
+        .trim();
+    (!host.is_empty()).then(|| format!("http://{host}"))
 }
 
 #[derive(Default)]
@@ -409,6 +486,17 @@ fn respond_text(request: Request, status: u16, body: &str) {
     let response = Response::from_string(body)
         .with_status_code(StatusCode(status))
         .with_header(header("Content-Type", "text/plain; charset=utf-8"));
+    let _ = request.respond(response);
+}
+
+fn respond_unauthorized(request: Request) {
+    let response = Response::from_string("Authentication is required.")
+        .with_status_code(StatusCode(401))
+        .with_header(header("Content-Type", "text/plain; charset=utf-8"))
+        .with_header(header(
+            "WWW-Authenticate",
+            "Basic realm=\"ArchiveKong\", charset=\"UTF-8\"",
+        ));
     let _ = request.respond(response);
 }
 
