@@ -3,6 +3,7 @@ use argon2::{
     Argon2,
 };
 use rand_core::OsRng;
+use rand_core::RngCore;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
@@ -20,6 +21,7 @@ use tauri_plugin_opener::OpenerExt;
 
 mod dlna;
 mod lan_server;
+mod relay_client;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct VideoDatabase {
@@ -65,37 +67,51 @@ struct ActorSocialLinks {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct AppSettings {
-    thumbnail_frame_second: String,
-    grid_size: String,
+pub(crate) struct AppSettings {
+    pub(crate) thumbnail_frame_second: String,
+    pub(crate) grid_size: String,
     #[serde(default = "default_true")]
-    enable_lan_access: bool,
+    pub(crate) enable_lan_access: bool,
     #[serde(default = "default_true")]
-    enable_dlna: bool,
+    pub(crate) enable_dlna: bool,
     #[serde(default = "default_main_view_mode")]
-    main_view_mode: String,
+    pub(crate) main_view_mode: String,
     #[serde(default = "default_font_size")]
-    font_size: String,
+    pub(crate) font_size: String,
     #[serde(default = "default_show_thumbnail_titles")]
-    show_thumbnail_titles: bool,
+    pub(crate) show_thumbnail_titles: bool,
     #[serde(default)]
-    left_panel_tags: LeftPanelTags,
+    pub(crate) left_panel_tags: LeftPanelTags,
     #[serde(default)]
-    right_panel_info: RightPanelInfo,
+    pub(crate) right_panel_info: RightPanelInfo,
     #[serde(default)]
-    hide_explicit_content: bool,
+    pub(crate) hide_explicit_content: bool,
     #[serde(default)]
-    explicit_content_password_hash: String,
+    pub(crate) explicit_content_password_hash: String,
     #[serde(default)]
-    enable_remote_auth: bool,
+    pub(crate) enable_remote_auth: bool,
     #[serde(default)]
-    remote_username: String,
+    pub(crate) remote_username: String,
     #[serde(default)]
-    remote_password_hash: String,
+    pub(crate) remote_password_hash: String,
+    #[serde(default)]
+    pub(crate) enable_hosted_relay: bool,
+    #[serde(default = "default_relay_url")]
+    pub(crate) relay_url: String,
+    #[serde(default)]
+    pub(crate) relay_device_name: String,
+    #[serde(default)]
+    pub(crate) relay_device_id: String,
+    #[serde(default)]
+    pub(crate) relay_device_secret: String,
+    #[serde(default)]
+    pub(crate) relay_pairing_code: String,
+    #[serde(default)]
+    pub(crate) relay_remote_url: String,
     #[serde(default = "default_sort_mode")]
-    sort_mode: String,
+    pub(crate) sort_mode: String,
     #[serde(default = "default_secondary_sort_mode")]
-    secondary_sort_mode: String,
+    pub(crate) secondary_sort_mode: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -221,6 +237,13 @@ impl Default for AppSettings {
             enable_remote_auth: false,
             remote_username: String::new(),
             remote_password_hash: String::new(),
+            enable_hosted_relay: false,
+            relay_url: default_relay_url(),
+            relay_device_name: default_relay_device_name(),
+            relay_device_id: String::new(),
+            relay_device_secret: String::new(),
+            relay_pairing_code: String::new(),
+            relay_remote_url: String::new(),
             sort_mode: default_sort_mode(),
             secondary_sort_mode: default_secondary_sort_mode(),
         }
@@ -237,6 +260,16 @@ fn default_true() -> bool {
 
 fn default_font_size() -> String {
     "large".to_string()
+}
+
+fn default_relay_url() -> String {
+    "https://remote.archivekong.app".to_string()
+}
+
+fn default_relay_device_name() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "ArchiveKong desktop".to_string())
 }
 
 fn default_main_view_mode() -> String {
@@ -1844,7 +1877,10 @@ pub fn run() {
             restore_backup,
             preview_organize_videos,
             confirm_organize_videos,
-            lan_server_url
+            lan_server_url,
+            hosted_relay_status,
+            create_hosted_relay_pairing,
+            revoke_hosted_relay_pairing
         ])
         .setup(|app| {
             let settings = load_app_settings(app.handle().clone()).unwrap_or_default();
@@ -1852,6 +1888,7 @@ pub fn run() {
             dlna::set_enabled(settings.enable_dlna);
             lan_server::start(app.handle().clone());
             dlna::start();
+            relay_client::start(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -1861,6 +1898,148 @@ pub fn run() {
 #[tauri::command]
 fn lan_server_url() -> String {
     lan_server::public_url()
+}
+
+#[derive(serde::Serialize)]
+struct HostedRelayStatus {
+    enabled: bool,
+    configured: bool,
+    connected: bool,
+    relay_url: String,
+    remote_url: String,
+    device_id: String,
+    device_name: String,
+    message: String,
+}
+
+#[derive(serde::Serialize)]
+struct HostedRelayPairing {
+    relay_url: String,
+    remote_url: String,
+    device_id: String,
+    device_secret: String,
+    device_name: String,
+    pairing_code: String,
+}
+
+#[tauri::command]
+fn hosted_relay_status(app: tauri::AppHandle) -> Result<HostedRelayStatus, String> {
+    let settings = load_app_settings(app)?;
+    Ok(relay_status_from_settings(&settings))
+}
+
+#[tauri::command]
+fn create_hosted_relay_pairing(
+    app: tauri::AppHandle,
+    relay_url: String,
+    device_name: String,
+) -> Result<HostedRelayPairing, String> {
+    let normalized_relay_url = normalize_relay_url(&relay_url)?;
+    let normalized_device_name = device_name.trim();
+    if normalized_device_name.is_empty() {
+        return Err("Remote device name cannot be empty.".to_string());
+    }
+
+    let mut settings = load_app_settings(app.clone())?;
+    settings.enable_hosted_relay = true;
+    settings.relay_url = normalized_relay_url;
+    settings.relay_device_name = normalized_device_name.to_string();
+    settings.relay_device_id = random_token(16);
+    settings.relay_device_secret = random_token(32);
+    settings.relay_pairing_code = format_pairing_code(&random_token(5));
+    settings.relay_remote_url = format!(
+        "{}/remote/{}",
+        settings.relay_url.trim_end_matches('/'),
+        settings.relay_device_id
+    );
+    if let Some(remote_url) = relay_client::register_pairing(&settings)? {
+        settings.relay_remote_url = remote_url;
+    }
+    write_app_settings(&app, &settings)?;
+
+    Ok(HostedRelayPairing {
+        relay_url: settings.relay_url,
+        remote_url: settings.relay_remote_url,
+        device_id: settings.relay_device_id,
+        device_secret: settings.relay_device_secret,
+        device_name: settings.relay_device_name,
+        pairing_code: settings.relay_pairing_code,
+    })
+}
+
+#[tauri::command]
+fn revoke_hosted_relay_pairing(app: tauri::AppHandle) -> Result<(), String> {
+    let mut settings = load_app_settings(app.clone())?;
+    settings.enable_hosted_relay = false;
+    settings.relay_device_id.clear();
+    settings.relay_device_secret.clear();
+    settings.relay_pairing_code.clear();
+    settings.relay_remote_url.clear();
+    write_app_settings(&app, &settings)
+}
+
+fn relay_status_from_settings(settings: &AppSettings) -> HostedRelayStatus {
+    let runtime = relay_client::current_status();
+    let configured =
+        !settings.relay_device_id.is_empty() && !settings.relay_device_secret.is_empty();
+    let remote_url = if settings.relay_remote_url.is_empty() && configured {
+        format!(
+            "{}/remote/{}",
+            settings.relay_url.trim_end_matches('/'),
+            settings.relay_device_id
+        )
+    } else {
+        settings.relay_remote_url.clone()
+    };
+    let message = if !settings.enable_hosted_relay {
+        "ArchiveKong Remote Access is disabled.".to_string()
+    } else if !configured {
+        "Create a pairing before this desktop can connect to ArchiveKong cloud.".to_string()
+    } else if !runtime.message.is_empty() {
+        runtime.message
+    } else {
+        "Pairing is ready. Relay service connection is not running in this build.".to_string()
+    };
+
+    HostedRelayStatus {
+        enabled: settings.enable_hosted_relay,
+        configured,
+        connected: runtime.connected,
+        relay_url: settings.relay_url.clone(),
+        remote_url,
+        device_id: settings.relay_device_id.clone(),
+        device_name: settings.relay_device_name.clone(),
+        message,
+    }
+}
+
+fn normalize_relay_url(relay_url: &str) -> Result<String, String> {
+    let relay_url = relay_url.trim().trim_end_matches('/').to_string();
+    if relay_url.is_empty() {
+        return Err("Relay URL cannot be empty.".to_string());
+    }
+    if !relay_url.starts_with("https://") && !relay_url.starts_with("http://localhost") {
+        return Err("Relay URL must use HTTPS, except localhost during development.".to_string());
+    }
+    Ok(relay_url)
+}
+
+fn random_token(byte_count: usize) -> String {
+    let mut bytes = vec![0_u8; byte_count];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn format_pairing_code(token: &str) -> String {
+    token
+        .chars()
+        .take(10)
+        .collect::<String>()
+        .as_bytes()
+        .chunks(5)
+        .map(|chunk| String::from_utf8_lossy(chunk).to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1917,6 +2096,13 @@ fn save_app_settings(
     enable_remote_auth: bool,
     remote_username: String,
     remote_password_hash: String,
+    enable_hosted_relay: bool,
+    relay_url: String,
+    relay_device_name: String,
+    relay_device_id: String,
+    relay_device_secret: String,
+    relay_pairing_code: String,
+    relay_remote_url: String,
     sort_mode: String,
     secondary_sort_mode: String,
 ) -> Result<(), String> {
@@ -1935,12 +2121,23 @@ fn save_app_settings(
         enable_remote_auth,
         remote_username,
         remote_password_hash,
+        enable_hosted_relay,
+        relay_url,
+        relay_device_name,
+        relay_device_id,
+        relay_device_secret,
+        relay_pairing_code,
+        relay_remote_url,
         sort_mode,
         secondary_sort_mode,
     };
     lan_server::set_enabled(settings.enable_lan_access);
     dlna::set_enabled(settings.enable_dlna);
-    let path = settings_path(&app)?;
+    write_app_settings(&app, &settings)
+}
+
+fn write_app_settings(app: &tauri::AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let path = settings_path(app)?;
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -1951,6 +2148,10 @@ fn save_app_settings(
         .map_err(|error| format!("Could not create settings JSON: {error}"))?;
 
     fs::write(&path, json).map_err(|error| format!("Could not save settings: {error}"))
+}
+
+pub(crate) fn load_app_settings_internal(app: tauri::AppHandle) -> Result<AppSettings, String> {
+    load_app_settings(app)
 }
 
 #[tauri::command]

@@ -1139,6 +1139,12 @@ button {
   padding: 0;
 }
 
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .details-panel button,
 .app-layout > button,
 .reset-button,

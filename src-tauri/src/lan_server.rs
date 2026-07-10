@@ -21,11 +21,46 @@ use tauri::Manager;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 pub const LAN_PORT: u16 = 4545;
+const REMOTE_MEDIA_CHUNK_BYTES: u64 = 1024 * 1024;
 static LAN_ACCESS_ENABLED: AtomicBool = AtomicBool::new(true);
 
 #[derive(RustEmbed)]
 #[folder = "../dist/"]
 struct WebAssets;
+
+#[derive(Clone)]
+pub struct RelayRequestHeaders {
+    pub range: Option<String>,
+}
+
+pub struct RelayLocalResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+enum FileKind {
+    Media,
+    Image,
+}
+
+#[derive(Default)]
+struct LibraryIndex {
+    modified: Option<SystemTime>,
+    media: HashSet<String>,
+    images: HashSet<String>,
+}
+
+#[derive(Default, serde::Deserialize)]
+struct RemoteAuthSettings {
+    #[serde(default)]
+    enable_remote_auth: bool,
+    #[serde(default)]
+    remote_username: String,
+    #[serde(default)]
+    remote_password_hash: String,
+}
 
 pub fn start(app: tauri::AppHandle) {
     thread::spawn(move || {
@@ -68,6 +103,43 @@ pub fn public_url_for_peer(peer: std::net::SocketAddr) -> String {
         "http://{}:{LAN_PORT}",
         local_ip_for(peer).unwrap_or_else(|| "127.0.0.1".into())
     )
+}
+
+pub fn handle_relay_get(
+    app: &tauri::AppHandle,
+    route_with_query: &str,
+    headers: &RelayRequestHeaders,
+) -> Result<RelayLocalResponse, String> {
+    let library_index = Mutex::new(LibraryIndex::default());
+    let (route, query) = route_with_query
+        .split_once('?')
+        .unwrap_or((route_with_query, ""));
+
+    match route {
+        "/api/library" => match read_app_file(app, "video-database.json")? {
+            Some(json) => Ok(RelayLocalResponse {
+                status: 200,
+                headers: json_headers("application/json; charset=utf-8", Some("no-store")),
+                body: json.into_bytes(),
+            }),
+            None => Ok(text_response(404, "Library database does not exist yet.")),
+        },
+        "/api/settings" => match read_app_file(app, "app-settings.json")? {
+            Some(json) => Ok(RelayLocalResponse {
+                status: 200,
+                headers: json_headers("application/json; charset=utf-8", Some("no-store")),
+                body: public_settings(&json).into_bytes(),
+            }),
+            None => Ok(RelayLocalResponse {
+                status: 200,
+                headers: json_headers("application/json; charset=utf-8", Some("no-store")),
+                body: b"{}".to_vec(),
+            }),
+        },
+        "/api/image" => relay_library_file(app, &library_index, query, FileKind::Image, headers),
+        "/api/media" => relay_library_file(app, &library_index, query, FileKind::Media, headers),
+        _ => Ok(text_response(404, "Not found.")),
+    }
 }
 
 fn local_ip_for(destination: impl std::net::ToSocketAddrs) -> Option<String> {
@@ -183,18 +255,9 @@ fn public_settings(json: &str) -> String {
     if let Some(object) = settings.as_object_mut() {
         object.remove("explicit_content_password_hash");
         object.remove("remote_password_hash");
+        object.remove("relay_device_secret");
     }
     settings.to_string()
-}
-
-#[derive(Default, serde::Deserialize)]
-struct RemoteAuthSettings {
-    #[serde(default)]
-    enable_remote_auth: bool,
-    #[serde(default)]
-    remote_username: String,
-    #[serde(default)]
-    remote_password_hash: String,
 }
 
 fn is_authorized(request: &Request, app: &tauri::AppHandle) -> bool {
@@ -241,12 +304,6 @@ fn basic_auth_credentials(request: &Request) -> Option<(String, String)> {
     Some((username.to_string(), password.to_string()))
 }
 
-#[derive(Clone, Copy)]
-enum FileKind {
-    Media,
-    Image,
-}
-
 fn serve_library_file(
     request: Request,
     app: &tauri::AppHandle,
@@ -269,6 +326,30 @@ fn serve_library_file(
     serve_file(request, Path::new(&requested_path), kind);
 }
 
+fn relay_library_file(
+    app: &tauri::AppHandle,
+    library_index: &Mutex<LibraryIndex>,
+    query: &str,
+    kind: FileKind,
+    headers: &RelayRequestHeaders,
+) -> Result<RelayLocalResponse, String> {
+    let Some(requested_path) = query_value(query, "path") else {
+        return Ok(text_response(400, "Missing path."));
+    };
+    let allowed = library_index
+        .lock()
+        .ok()
+        .is_some_and(|mut index| index.allows(app, &requested_path, kind));
+    if !allowed {
+        return Ok(text_response(
+            403,
+            "That file is not part of the shared library.",
+        ));
+    }
+
+    relay_file(Path::new(&requested_path), kind, headers)
+}
+
 fn query_value(query: &str, wanted_key: &str) -> Option<String> {
     query.split('&').find_map(|part| {
         let (key, value) = part.split_once('=')?;
@@ -285,13 +366,6 @@ fn request_base_url(request: &Request) -> Option<String> {
         .as_str()
         .trim();
     (!host.is_empty()).then(|| format!("http://{host}"))
-}
-
-#[derive(Default)]
-struct LibraryIndex {
-    modified: Option<SystemTime>,
-    media: HashSet<String>,
-    images: HashSet<String>,
 }
 
 impl LibraryIndex {
@@ -345,28 +419,115 @@ impl LibraryIndex {
 }
 
 fn serve_file(request: Request, path: &Path, kind: FileKind) {
-    let mut file = match File::open(path) {
-        Ok(file) => file,
-        Err(_) => {
-            respond_text(request, 404, "File not found.");
-            return;
+    let head_only = request.method() == &Method::Head;
+    match build_file_response(path, kind, None, false, head_only) {
+        Ok(FileResponse::Body {
+            status,
+            headers,
+            body,
+        }) => {
+            let _ = request.respond(Response::new(StatusCode(status), headers, body, None, None));
         }
-    };
-    let length = match file.metadata() {
-        Ok(metadata) => metadata.len(),
-        Err(_) => {
-            respond_text(request, 500, "Could not read file metadata.");
-            return;
+        Ok(FileResponse::Head { status, headers }) => {
+            let _ = request.respond(add_headers(Response::empty(StatusCode(status)), headers));
         }
-    };
+        Err(error) => respond_text(request, error.status, &error.message),
+    }
+}
+
+fn relay_file(
+    path: &Path,
+    kind: FileKind,
+    headers: &RelayRequestHeaders,
+) -> Result<RelayLocalResponse, String> {
+    match build_file_response(path, kind, headers.range.as_deref(), true, false) {
+        Ok(FileResponse::Body {
+            status,
+            headers,
+            mut body,
+        }) => {
+            let mut bytes = Vec::new();
+            body.read_to_end(&mut bytes)
+                .map_err(|error| format!("Could not read file: {error}"))?;
+            Ok(RelayLocalResponse {
+                status,
+                headers: headers
+                    .into_iter()
+                    .map(|header| {
+                        (
+                            header.field.as_str().to_ascii_lowercase().to_string(),
+                            header.value.as_str().to_string(),
+                        )
+                    })
+                    .collect(),
+                body: bytes,
+            })
+        }
+        Ok(FileResponse::Head { status, headers }) => Ok(RelayLocalResponse {
+            status,
+            headers: headers
+                .into_iter()
+                .map(|header| {
+                    (
+                        header.field.as_str().to_ascii_lowercase().to_string(),
+                        header.value.as_str().to_string(),
+                    )
+                })
+                .collect(),
+            body: Vec::new(),
+        }),
+        Err(error) => Ok(text_response(error.status, &error.message)),
+    }
+}
+
+enum FileResponse {
+    Body {
+        status: u16,
+        headers: Vec<Header>,
+        body: Box<dyn Read + Send>,
+    },
+    Head {
+        status: u16,
+        headers: Vec<Header>,
+    },
+}
+
+struct FileResponseError {
+    status: u16,
+    message: String,
+}
+
+fn build_file_response(
+    path: &Path,
+    kind: FileKind,
+    range_header: Option<&str>,
+    clamp_media_without_range: bool,
+    head_only: bool,
+) -> Result<FileResponse, FileResponseError> {
+    let mut file = File::open(path).map_err(|_| FileResponseError {
+        status: 404,
+        message: "File not found.".to_string(),
+    })?;
+    let length = file
+        .metadata()
+        .map_err(|_| FileResponseError {
+            status: 500,
+            message: "Could not read file metadata.".to_string(),
+        })?
+        .len();
     let mime = mime_guess::from_path(path)
         .first_or_octet_stream()
         .to_string();
-    let range = request
-        .headers()
-        .iter()
-        .find(|header| header.field.equiv("Range"))
-        .and_then(|header| parse_range(header.value.as_str(), length));
+
+    let requested_range = range_header.and_then(|value| parse_range(value, length));
+    let range = requested_range.or_else(|| {
+        if clamp_media_without_range && matches!(kind, FileKind::Media) && length > 0 {
+            let end = (REMOTE_MEDIA_CHUNK_BYTES - 1).min(length - 1);
+            Some((0, end))
+        } else {
+            None
+        }
+    });
 
     let mut headers = vec![
         header("Content-Type", &mime),
@@ -378,7 +539,11 @@ fn serve_file(request: Request, path: &Path, kind: FileKind) {
             "contentFeatures.dlna.org",
             "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000",
         ));
+        if clamp_media_without_range {
+            headers.push(header("Cache-Control", "private, no-transform"));
+        }
     }
+
     if let Some((start, end)) = range {
         let response_length = end - start + 1;
         headers.push(header(
@@ -386,32 +551,36 @@ fn serve_file(request: Request, path: &Path, kind: FileKind) {
             &format!("bytes {start}-{end}/{length}"),
         ));
         headers.push(header("Content-Length", &response_length.to_string()));
-        if request.method() == &Method::Head {
-            let _ = request.respond(add_headers(Response::empty(StatusCode(206)), headers));
-            return;
+        file.seek(SeekFrom::Start(start))
+            .map_err(|_| FileResponseError {
+                status: 500,
+                message: "Could not seek in file.".to_string(),
+            })?;
+        if head_only {
+            return Ok(FileResponse::Head {
+                status: 206,
+                headers,
+            });
         }
-        if file.seek(SeekFrom::Start(start)).is_err() {
-            respond_text(request, 500, "Could not seek in file.");
-            return;
-        }
-        let response = Response::new(
-            StatusCode(206),
+        return Ok(FileResponse::Body {
+            status: 206,
             headers,
-            file.take(response_length),
-            None,
-            None,
-        );
-        let _ = request.respond(response);
-        return;
+            body: Box::new(file.take(response_length)),
+        });
     }
 
     headers.push(header("Content-Length", &length.to_string()));
-    if request.method() == &Method::Head {
-        let _ = request.respond(add_headers(Response::empty(StatusCode(200)), headers));
-    } else {
-        let response = Response::new(StatusCode(200), headers, file, None, None);
-        let _ = request.respond(response);
+    if head_only {
+        return Ok(FileResponse::Head {
+            status: 200,
+            headers,
+        });
     }
+    Ok(FileResponse::Body {
+        status: 200,
+        headers,
+        body: Box::new(file),
+    })
 }
 
 fn parse_range(value: &str, length: u64) -> Option<(u64, u64)> {
@@ -498,6 +667,25 @@ fn respond_unauthorized(request: Request) {
             "Basic realm=\"ArchiveKong\", charset=\"UTF-8\"",
         ));
     let _ = request.respond(response);
+}
+
+fn text_response(status: u16, body: &str) -> RelayLocalResponse {
+    RelayLocalResponse {
+        status,
+        headers: vec![(
+            "content-type".to_string(),
+            "text/plain; charset=utf-8".to_string(),
+        )],
+        body: body.as_bytes().to_vec(),
+    }
+}
+
+fn json_headers(content_type: &str, cache_control: Option<&str>) -> Vec<(String, String)> {
+    let mut headers = vec![("content-type".to_string(), content_type.to_string())];
+    if let Some(cache_control) = cache_control {
+        headers.push(("cache-control".to_string(), cache_control.to_string()));
+    }
+    headers
 }
 
 fn header(name: &str, value: &str) -> Header {

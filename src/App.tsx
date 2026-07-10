@@ -76,8 +76,35 @@ type AppSettings = {
   enable_remote_auth?: boolean;
   remote_username?: string;
   remote_password_hash?: string;
+  enable_hosted_relay?: boolean;
+  relay_url?: string;
+  relay_device_name?: string;
+  relay_device_id?: string;
+  relay_device_secret?: string;
+  relay_pairing_code?: string;
+  relay_remote_url?: string;
   sort_mode?: SortMode;
   secondary_sort_mode?: SecondarySortMode;
+};
+
+type HostedRelayStatus = {
+  enabled: boolean;
+  configured: boolean;
+  connected: boolean;
+  relay_url: string;
+  remote_url: string;
+  device_id: string;
+  device_name: string;
+  message: string;
+};
+
+type HostedRelayPairing = {
+  relay_url: string;
+  remote_url: string;
+  device_id: string;
+  device_secret: string;
+  device_name: string;
+  pairing_code: string;
 };
 
 type LeftPanelTags = {
@@ -527,6 +554,15 @@ function App() {
   const [enableRemoteAuth, setEnableRemoteAuth] = useState(false);
   const [remoteUsername, setRemoteUsername] = useState("");
   const [remotePasswordHash, setRemotePasswordHash] = useState("");
+  const [enableHostedRelay, setEnableHostedRelay] = useState(false);
+  const [relayUrl, setRelayUrl] = useState("https://remote.archivekong.app");
+  const [relayDeviceName, setRelayDeviceName] = useState("ArchiveKong desktop");
+  const [relayDeviceId, setRelayDeviceId] = useState("");
+  const [relayDeviceSecret, setRelayDeviceSecret] = useState("");
+  const [relayPairingCode, setRelayPairingCode] = useState("");
+  const [relayRemoteUrl, setRelayRemoteUrl] = useState("");
+  const [relayStatus, setRelayStatus] = useState<HostedRelayStatus | null>(null);
+  const [isPairingRelay, setIsPairingRelay] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [editForm, setEditForm] = useState<VideoEditForm>({
     title: "",
@@ -698,6 +734,16 @@ function App() {
         setEnableRemoteAuth(settings.enable_remote_auth ?? false);
         setRemoteUsername(settings.remote_username ?? "");
         setRemotePasswordHash(settings.remote_password_hash ?? "");
+        setEnableHostedRelay(settings.enable_hosted_relay ?? false);
+        setRelayUrl(settings.relay_url ?? "https://remote.archivekong.app");
+        setRelayDeviceName(settings.relay_device_name ?? "ArchiveKong desktop");
+        setRelayDeviceId(settings.relay_device_id ?? "");
+        setRelayDeviceSecret(settings.relay_device_secret ?? "");
+        setRelayPairingCode(settings.relay_pairing_code ?? "");
+        setRelayRemoteUrl(settings.relay_remote_url ?? "");
+        if (!isLanBrowser) {
+          setRelayStatus(await invoke<HostedRelayStatus>("hosted_relay_status"));
+        }
         setSortMode(settings.sort_mode ?? "played-count");
         setSecondarySortMode(settings.secondary_sort_mode ?? "rating");
         settingsLoaded.current = true;
@@ -790,6 +836,13 @@ function App() {
       enableRemoteAuth,
       remoteUsername,
       remotePasswordHash,
+      enableHostedRelay,
+      relayUrl,
+      relayDeviceName,
+      relayDeviceId,
+      relayDeviceSecret,
+      relayPairingCode,
+      relayRemoteUrl,
       sortMode,
       secondarySortMode,
     };
@@ -810,6 +863,12 @@ function App() {
           hide_explicit_content: hideExplicitContent,
           enable_remote_auth: enableRemoteAuth,
           remote_username: remoteUsername,
+          enable_hosted_relay: enableHostedRelay,
+          relay_url: relayUrl,
+          relay_device_name: relayDeviceName,
+          relay_device_id: relayDeviceId,
+          relay_pairing_code: relayPairingCode,
+          relay_remote_url: relayRemoteUrl,
           sort_mode: sortMode,
           secondary_sort_mode: secondarySortMode,
         } satisfies AppSettings),
@@ -835,6 +894,13 @@ function App() {
     enableRemoteAuth,
     remoteUsername,
     remotePasswordHash,
+    enableHostedRelay,
+    relayUrl,
+    relayDeviceName,
+    relayDeviceId,
+    relayDeviceSecret,
+    relayPairingCode,
+    relayRemoteUrl,
     sortMode,
     secondarySortMode,
   ]);
@@ -1763,6 +1829,67 @@ function App() {
     }
 
     setEnableRemoteAuth(true);
+  }
+
+  async function refreshHostedRelayStatus() {
+    if (isLanBrowser) {
+      return;
+    }
+
+    try {
+      const status = await invoke<HostedRelayStatus>("hosted_relay_status");
+      setRelayStatus(status);
+      setEnableHostedRelay(status.enabled);
+      setRelayUrl(status.relay_url || "https://remote.archivekong.app");
+      setRelayDeviceName(status.device_name || "ArchiveKong desktop");
+      setRelayDeviceId(status.device_id);
+      setRelayRemoteUrl(status.remote_url);
+    } catch (error) {
+      setErrorMessage(String(error));
+    }
+  }
+
+  async function createHostedRelayPairing() {
+    setErrorMessage("");
+    setIsPairingRelay(true);
+
+    try {
+      const pairing = await invoke<HostedRelayPairing>(
+        "create_hosted_relay_pairing",
+        {
+          relayUrl,
+          deviceName: relayDeviceName,
+        },
+      );
+      setEnableHostedRelay(true);
+      setRelayUrl(pairing.relay_url);
+      setRelayDeviceName(pairing.device_name);
+      setRelayDeviceId(pairing.device_id);
+      setRelayPairingCode(pairing.pairing_code);
+      setRelayRemoteUrl(pairing.remote_url);
+      setRelayDeviceSecret(pairing.device_secret);
+      await refreshHostedRelayStatus();
+    } catch (error) {
+      setErrorMessage(String(error));
+    } finally {
+      setIsPairingRelay(false);
+    }
+  }
+
+  async function revokeHostedRelayPairing() {
+    setErrorMessage("");
+
+    try {
+      await invoke("revoke_hosted_relay_pairing");
+      setEnableHostedRelay(false);
+      setRelayDeviceId("");
+      setRelayDeviceSecret("");
+      setRelayPairingCode("");
+      setRelayRemoteUrl("");
+      await refreshHostedRelayStatus();
+    } catch (error) {
+      setErrorMessage(String(error));
+    }
   }
 
   async function toggleHideExplicitContent(shouldHide: boolean) {
@@ -4525,6 +4652,77 @@ function App() {
           </p>
           <p>DLNA media server: {enableDlna ? "ArchiveKong" : "Disabled"}</p>
         </div>
+
+        {!isLanBrowser && (
+          <div className="settings-section">
+            <h2>ArchiveKong Remote Access</h2>
+            <div className="settings-field">
+              <label className="settings-checkbox" htmlFor="enable-hosted-relay">
+                <input
+                  checked={enableHostedRelay}
+                  id="enable-hosted-relay"
+                  type="checkbox"
+                  onChange={(event) => setEnableHostedRelay(event.target.checked)}
+                />
+                Enable hosted remote access
+              </label>
+            </div>
+            <label>
+              Relay server
+              <input
+                type="url"
+                value={relayUrl}
+                onChange={(event) => setRelayUrl(event.target.value)}
+                placeholder="https://remote.archivekong.app"
+              />
+            </label>
+            <label>
+              Device name
+              <input
+                type="text"
+                value={relayDeviceName}
+                onChange={(event) => setRelayDeviceName(event.target.value)}
+                placeholder="ArchiveKong desktop"
+              />
+            </label>
+            <div className="settings-actions">
+              <button
+                type="button"
+                disabled={isPairingRelay || !enableHostedRelay}
+                onClick={createHostedRelayPairing}
+              >
+                {relayDeviceId ? "Refresh Pairing" : "Create Pairing"}
+              </button>
+              <button
+                type="button"
+                disabled={!relayDeviceId}
+                onClick={revokeHostedRelayPairing}
+              >
+                Revoke Pairing
+              </button>
+              <button type="button" onClick={refreshHostedRelayStatus}>
+                Refresh Status
+              </button>
+            </div>
+            {relayPairingCode && (
+              <p>Pairing code: {relayPairingCode}</p>
+            )}
+            <p>
+              Remote library:{" "}
+              {relayRemoteUrl || relayStatus?.remote_url || "Not paired"}
+            </p>
+            <p>
+              Relay status:{" "}
+              {relayStatus?.connected
+                ? "Connected"
+                : relayStatus?.message || "Not checked"}
+            </p>
+            <p>
+              Remote playback sends library metadata, thumbnails, and video
+              streams through the configured ArchiveKong relay.
+            </p>
+          </div>
+        )}
 
         <div className="settings-section">
           <h2>Left panel</h2>
