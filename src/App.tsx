@@ -13,6 +13,7 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 import "./App.css";
 
 type VideoFile = {
+  media_type?: "video" | "music";
   filename: string;
   file_path: string;
   title: string;
@@ -31,6 +32,10 @@ type VideoFile = {
   bitrate: string;
   filesize: number;
   artwork_thumbnail: string;
+  artist?: string;
+  composer?: string;
+  album?: string;
+  track_number?: string;
   rating: number;
   play_count: number;
   added_at: string;
@@ -207,7 +212,10 @@ type ViewMode =
   | "writers"
   | "genres"
   | "subgenres"
+  | "artists"
+  | "albums"
   | "ratings"
+  | "player"
   | "settings";
 type MainViewMode = "grid" | "list";
 type AppFontSize = "small" | "medium" | "large";
@@ -271,6 +279,10 @@ type VideoEditForm = {
   explicit_content: "true" | "false" | "various";
   rating: string;
   play_count: string;
+  artist: string;
+  composer: string;
+  album: string;
+  track_number: string;
 };
 
 type AutocompleteField =
@@ -505,6 +517,7 @@ function App() {
   const [selectedVideo, setSelectedVideo] = useState<VideoFile | null>(null);
   const [selectedVideoPaths, setSelectedVideoPaths] = useState<string[]>([]);
   const [activeView, setActiveView] = useState<ViewMode>("actors");
+  const [activeMediaType, setActiveMediaType] = useState<"video" | "music">("video");
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("actor");
   const [rightPanelDetailMode, setRightPanelDetailMode] =
     useState<RightPanelDetailMode>("short");
@@ -579,6 +592,10 @@ function App() {
     explicit_content: "false",
     rating: "0",
     play_count: "0",
+    artist: "",
+    composer: "",
+    album: "",
+    track_number: "",
   });
   const [autocompleteState, setAutocompleteState] =
     useState<AutocompleteState>(null);
@@ -634,6 +651,11 @@ function App() {
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [isTopPanelCollapsed, setIsTopPanelCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const [playerVideo, setPlayerVideo] = useState<VideoFile | null>(null);
+  const [playerReturnSnapshot, setPlayerReturnSnapshot] =
+    useState<NavigationSnapshot | null>(null);
+  const [playerError, setPlayerError] = useState("");
+  const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const isGeneratingThumbnails = useRef(false);
   const settingsLoaded = useRef(false);
   const activeViewRef = useRef<ViewMode>("actors");
@@ -645,6 +667,8 @@ function App() {
   const hoverPreviewVideoRef = useRef<VideoFile | null>(null);
   const hoverPreviewPositionRef = useRef({ x: 0, y: 0 });
   const actorCropImageRef = useRef<HTMLImageElement | null>(null);
+  const playerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const playerPlaybackPositionRef = useRef(0);
   const genreFilterRef = useRef<HTMLDetailsElement | null>(null);
   const subGenreFilterRef = useRef<HTMLDetailsElement | null>(null);
   const ratingFilterRef = useRef<HTMLDetailsElement | null>(null);
@@ -654,6 +678,28 @@ function App() {
     cropX: number;
     cropY: number;
   } | null>(null);
+
+  useEffect(() => {
+    const player = playerVideoRef.current;
+    if (!player || !playerVideo) {
+      return;
+    }
+
+    const resumePlayback = () => {
+      if (playerPlaybackPositionRef.current > 0) {
+        player.currentTime = playerPlaybackPositionRef.current;
+      }
+      void player.play().catch((error) => setPlayerError(String(error)));
+    };
+
+    if (player.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      resumePlayback();
+      return;
+    }
+
+    player.addEventListener("loadedmetadata", resumePlayback, { once: true });
+    return () => player.removeEventListener("loadedmetadata", resumePlayback);
+  }, [activeView, isPlayerMinimized, playerVideo]);
 
   useEffect(() => {
     function closeFiltersOnOutsideClick(event: globalThis.PointerEvent) {
@@ -1067,6 +1113,10 @@ function App() {
         explicit_content: "false",
         rating: "0",
         play_count: "0",
+        artist: "",
+        composer: "",
+        album: "",
+        track_number: "",
       });
       return;
     }
@@ -1086,6 +1136,10 @@ function App() {
       explicit_content: sharedBooleanValue(selectedVideos, "explicit_content"),
       rating: sharedNumberValue(selectedVideos, "rating"),
       play_count: sharedNumberValue(selectedVideos, "play_count"),
+      artist: sharedStringValue(selectedVideos, "artist"),
+      composer: sharedStringValue(selectedVideos, "composer"),
+      album: sharedStringValue(selectedVideos, "album"),
+      track_number: sharedStringValue(selectedVideos, "track_number"),
     });
   }, [
     isRightPanelEditing,
@@ -1537,39 +1591,94 @@ function App() {
     }
   }
 
-  async function openVideo(filePath: string) {
+  function openVideo(filePath: string) {
     setErrorMessage("");
-
-    if (isLanBrowser) {
-      window.open(lanFileUrl("media", filePath), "_blank", "noopener,noreferrer");
+    const video = videoFiles.find((currentVideo) => currentVideo.file_path === filePath);
+    if (!video) {
+      setErrorMessage("The selected video is no longer in the library.");
       return;
     }
 
-    try {
-      const watchedVideo = videoFiles.find((video) => video.file_path === filePath);
-      const playCount = await invoke<number>("open_video_file", { filePath });
-
-      setVideoFiles((currentVideos) =>
-        currentVideos.map((video) =>
-          video.file_path === filePath
-            ? { ...video, play_count: playCount }
-            : video,
-        ),
-      );
-
-      setSelectedVideo((currentVideo) =>
-        currentVideo?.file_path === filePath
-          ? { ...currentVideo, play_count: playCount }
-          : currentVideo,
-      );
-      if (watchedVideo) {
-        setWatchStatistics((currentStatistics) =>
-          incrementLocalWatchStatistics(currentStatistics, watchedVideo),
-        );
+    if (mediaTypeOf(video) === "music") {
+      if (isLanBrowser) {
+        window.open(lanFileUrl("media", filePath), "_blank", "noopener,noreferrer");
+        return;
       }
-    } catch (error) {
-      setErrorMessage(String(error));
+      void openVideosInExternalPlayer([video]);
+      return;
     }
+
+    stopHoverPreview();
+    playerPlaybackPositionRef.current = 0;
+    setPlayerReturnSnapshot(currentNavigationSnapshot());
+    setPlayerVideo(video);
+    setPlayerError("");
+    setIsPlayerMinimized(false);
+    activeViewRef.current = "player";
+    setActiveView("player");
+
+    if (isLanBrowser) {
+      return;
+    }
+
+    void invoke<number>("record_video_watch", { filePath })
+      .then((playCount) => {
+        setVideoFiles((currentVideos) =>
+          currentVideos.map((currentVideo) =>
+            currentVideo.file_path === filePath
+              ? { ...currentVideo, play_count: playCount }
+              : currentVideo,
+          ),
+        );
+        setSelectedVideo((currentVideo) =>
+          currentVideo?.file_path === filePath
+            ? { ...currentVideo, play_count: playCount }
+            : currentVideo,
+        );
+        setWatchStatistics((currentStatistics) =>
+          incrementLocalWatchStatistics(currentStatistics, video),
+        );
+      })
+      .catch((error) => setErrorMessage(String(error)));
+  }
+
+  function stopPlayer(returnToOrigin = true) {
+    const player = playerVideoRef.current;
+    if (player) {
+      player.pause();
+      player.currentTime = 0;
+    }
+
+    const returnSnapshot = playerReturnSnapshot;
+    setPlayerVideo(null);
+    setPlayerReturnSnapshot(null);
+    setPlayerError("");
+    setIsPlayerMinimized(false);
+    playerPlaybackPositionRef.current = 0;
+
+    if (returnToOrigin && returnSnapshot) {
+      restoreNavigationSnapshot(returnSnapshot);
+    }
+  }
+
+  function minimizePlayer() {
+    const player = playerVideoRef.current;
+    if (player) {
+      playerPlaybackPositionRef.current = player.currentTime;
+    }
+
+    const returnSnapshot = playerReturnSnapshot;
+    setIsPlayerMinimized(true);
+
+    if (returnSnapshot) {
+      restoreNavigationSnapshot(returnSnapshot);
+    }
+  }
+
+  function restorePlayer() {
+    activeViewRef.current = "player";
+    setIsPlayerMinimized(false);
+    setActiveView("player");
   }
 
   async function openVideoIncognito(filePath: string) {
@@ -1577,6 +1686,51 @@ function App() {
 
     try {
       await invoke("open_video_file_incognito", { filePath });
+    } catch (error) {
+      setErrorMessage(String(error));
+    }
+  }
+
+  async function openVideosInExternalPlayer(videos: VideoFile[]) {
+    if (videos.length === 0) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    try {
+      const openedVideos = await Promise.all(
+        videos.map(async (video) => ({
+          filePath: video.file_path,
+          playCount: await invoke<number>("open_video_file", {
+            filePath: video.file_path,
+          }),
+        })),
+      );
+      const playCountsByPath = new Map(
+        openedVideos.map(({ filePath, playCount }) => [filePath, playCount]),
+      );
+
+      setVideoFiles((currentVideos) =>
+        currentVideos.map((video) => {
+          const playCount = playCountsByPath.get(video.file_path);
+          return playCount === undefined ? video : { ...video, play_count: playCount };
+        }),
+      );
+      setSelectedVideo((video) => {
+        if (!video) {
+          return null;
+        }
+
+        const playCount = playCountsByPath.get(video.file_path);
+        return playCount === undefined ? video : { ...video, play_count: playCount };
+      });
+      setWatchStatistics((currentStatistics) =>
+        videos.reduce(
+          (statistics, video) => incrementLocalWatchStatistics(statistics, video),
+          currentStatistics,
+        ),
+      );
     } catch (error) {
       setErrorMessage(String(error));
     }
@@ -1684,7 +1838,11 @@ function App() {
       | "date"
       | "backup_date"
       | "backup_location"
-      | "notes",
+      | "notes"
+      | "artist"
+      | "composer"
+      | "album"
+      | "track_number",
   ) {
     const firstValue = videos[0]?.[field] ?? "";
 
@@ -1953,6 +2111,10 @@ function App() {
             explicitContent: booleanValueForBatchSave(editForm.explicit_content),
             rating: valueForBatchSave(editForm.rating, true, 10),
             playCount: valueForBatchSave(editForm.play_count, true),
+            artist: valueForBatchSave(editForm.artist),
+            composer: valueForBatchSave(editForm.composer),
+            album: valueForBatchSave(editForm.album),
+            trackNumber: valueForBatchSave(editForm.track_number),
           },
         );
         const updatedByPath = new Map(
@@ -1988,6 +2150,10 @@ function App() {
         explicitContent: editForm.explicit_content === "true",
         rating: clampRating(Number.parseInt(editForm.rating, 10) || 0),
         playCount: Number.parseInt(editForm.play_count, 10) || 0,
+        artist: editForm.artist,
+        composer: editForm.composer,
+        album: editForm.album,
+        trackNumber: editForm.track_number,
       });
 
       setVideoFiles((currentVideos) =>
@@ -2442,7 +2608,10 @@ function App() {
       video.artwork_thumbnail !== video.file_path &&
       (thumbnail.endsWith(".jpg") ||
         thumbnail.endsWith(".jpeg") ||
-        thumbnail.endsWith(".png"))
+        thumbnail.endsWith(".png") ||
+        thumbnail.endsWith(".gif") ||
+        thumbnail.endsWith(".bmp") ||
+        thumbnail.endsWith(".tif"))
     );
   }
 
@@ -2458,6 +2627,9 @@ function App() {
     isGeneratingThumbnails.current = true;
 
     for (const video of videos) {
+      if (mediaTypeOf(video) === "music") {
+        continue;
+      }
       if (hasCachedThumbnail(video)) {
         if (!video.resolution || !video.bitrate) {
           await updateTechnicalMetadataForVideo(video);
@@ -2983,6 +3155,18 @@ function App() {
     return splitTagList(video.actor, "Unknown actor");
   }
 
+  function artistNames(video: VideoFile) {
+    return splitTagList(video.artist ?? "", "Unknown artist");
+  }
+
+  function albumNames(video: VideoFile) {
+    return splitTagList(video.album ?? "", "Unknown album");
+  }
+
+  function mediaTypeOf(video: VideoFile): "video" | "music" {
+    return video.media_type === "music" ? "music" : "video";
+  }
+
   function genreNames(video: VideoFile) {
     return splitTagList(video.genre, "Unknown genre");
   }
@@ -3051,7 +3235,7 @@ function App() {
   }
 
   function actorFilterOptions() {
-    return uniqueTagOptions(actorNames);
+    return uniqueTagOptions(activeMediaType === "music" ? artistNames : actorNames);
   }
 
   function genreFilterOptions() {
@@ -3545,6 +3729,10 @@ function App() {
       video.director,
       video.publisher,
       video.writers,
+      video.artist ?? "",
+      video.composer ?? "",
+      video.album ?? "",
+      video.track_number ?? "",
       video.genre,
       video.sub_genre,
       video.date,
@@ -3617,11 +3805,17 @@ function App() {
   function visibleVideos(videos = videoFiles) {
     return sortVideos(
       videos.filter((video) => {
+        if (mediaTypeOf(video) !== activeMediaType) {
+          return false;
+        }
         if (!matchesFilter(video)) {
           return false;
         }
 
-        if (actorFilter !== "all" && !actorNames(video).includes(actorFilter)) {
+        if (
+          actorFilter !== "all" &&
+          !(activeMediaType === "music" ? artistNames(video) : actorNames(video)).includes(actorFilter)
+        ) {
           return false;
         }
 
@@ -3760,7 +3954,10 @@ function App() {
   }
 
   function contentVisibleVideos(videos = videoFiles) {
-    return videos.filter(isVideoVisibleByExplicitSetting);
+    return videos.filter(
+      (video) =>
+        mediaTypeOf(video) === activeMediaType && isVideoVisibleByExplicitSetting(video),
+    );
   }
 
   function buildGroups(
@@ -3810,6 +4007,12 @@ function App() {
         plural: "Sub-genres",
         names: subGenreNames,
       };
+    }
+    if (view === "artists") {
+      return { singular: "Artist", plural: "Artists", names: artistNames };
+    }
+    if (view === "albums") {
+      return { singular: "Album", plural: "Albums", names: albumNames };
     }
     return null;
   }
@@ -4038,6 +4241,15 @@ function App() {
 
     if (!firstVideo) {
       return null;
+    }
+
+    if (mediaTypeOf(firstVideo) === "music") {
+      return (
+        <span className="artwork-frame right-panel-actor-frame">
+          {renderArtwork(firstVideo, "actor-details-artwork")}
+          <span className="thumbnail-label">{firstVideo.album || firstVideo.title}</span>
+        </span>
+      );
     }
 
     const actorName = actorNames(firstVideo)[0];
@@ -4295,6 +4507,83 @@ function App() {
           )}
         </span>
       </button>
+    );
+  }
+
+  function renderPlayerView() {
+    if (!playerVideo) {
+      return null;
+    }
+    const videoSource = isLanBrowser
+      ? lanFileUrl("media", playerVideo.file_path)
+      : convertFileSrc(playerVideo.file_path);
+    return (
+      <section className="internal-video-player" aria-label="Video player">
+        <div className="internal-video-player-actions">
+          <button type="button" onClick={() => stopPlayer()}>
+            Back to library
+          </button>
+          <button type="button" onClick={minimizePlayer}>
+            Minimize
+          </button>
+          {!isLanBrowser && (
+            <button
+              type="button"
+              onClick={() => openVideoIncognito(playerVideo.file_path)}
+            >
+              Open Incognito
+            </button>
+          )}
+        </div>
+        <video
+          autoPlay
+          className="internal-video-player-media"
+          controls
+          onError={() => setPlayerError("This video could not be played in ArchiveKong.")}
+          onTimeUpdate={(event) => {
+            playerPlaybackPositionRef.current = event.currentTarget.currentTime;
+          }}
+          ref={playerVideoRef}
+          src={videoSource}
+        />
+        {playerError && <p className="internal-video-player-error">{playerError}</p>}
+      </section>
+    );
+  }
+
+  function renderMinimizedPlayer() {
+    if (!playerVideo || !isPlayerMinimized) {
+      return null;
+    }
+
+    const videoSource = isLanBrowser
+      ? lanFileUrl("media", playerVideo.file_path)
+      : convertFileSrc(playerVideo.file_path);
+
+    return (
+      <aside className="minimized-video-player" aria-label="Minimized video player">
+        <div className="minimized-video-player-actions">
+          <span title={playerVideo.title}>{playerVideo.title}</span>
+          <button type="button" onClick={restorePlayer}>
+            Restore
+          </button>
+          <button type="button" onClick={() => stopPlayer(false)}>
+            Close
+          </button>
+        </div>
+        <video
+          autoPlay
+          className="minimized-video-player-media"
+          controls
+          onError={() => setPlayerError("This video could not be played in ArchiveKong.")}
+          onTimeUpdate={(event) => {
+            playerPlaybackPositionRef.current = event.currentTarget.currentTime;
+          }}
+          ref={playerVideoRef}
+          src={videoSource}
+        />
+        {playerError && <p className="minimized-video-player-error">{playerError}</p>}
+      </aside>
     );
   }
 
@@ -5519,6 +5808,14 @@ function App() {
         {rightPanelInfo.writers &&
           renderReadOnlyRow("Writers", videoValues.writers)}
         {rightPanelInfo.title && renderReadOnlyRow("Title", videoValues.title)}
+        {selectedVideo && mediaTypeOf(selectedVideo) === "music" && (
+          <>
+            {renderReadOnlyRow("Artist", videoValues.artist)}
+            {renderReadOnlyRow("Composer", videoValues.composer)}
+            {renderReadOnlyRow("Album", videoValues.album)}
+            {renderReadOnlyRow("Track number", videoValues.track_number)}
+          </>
+        )}
         {rightPanelInfo.genre && renderReadOnlyRow("Genre", videoValues.genre)}
         {rightPanelInfo.sub_genre &&
           renderReadOnlyRow("Sub-genre", videoValues.sub_genre)}
@@ -6071,7 +6368,7 @@ function App() {
             </button>
           )}
           <button type="button" onClick={() => openVideo(selectedVideo.file_path)}>
-            Open
+            Play
           </button>
         </>
       );
@@ -6334,7 +6631,7 @@ function App() {
         </button>
         {isExtendedRightPanel && (
           <button type="button" onClick={() => openVideo(selectedVideo.file_path)}>
-            Open
+            Play
           </button>
         )}
       </>
@@ -6354,6 +6651,9 @@ function App() {
 
       {errorMessage && <p className="error-message">{errorMessage}</p>}
 
+      {activeView === "player" ? (
+        renderPlayerView()
+      ) : (
       <section
         className={
           isLeftPanelCollapsed
@@ -6363,6 +6663,30 @@ function App() {
       >
         {!isLeftPanelCollapsed && (
           <nav className="left-panel" aria-label="Library views">
+            <div className="media-type-selector" aria-label="Media type">
+              {(["video", "music"] as const).map((mediaType) => (
+                <button
+                  className={activeMediaType === mediaType ? "nav-item active" : "nav-item"}
+                  key={mediaType}
+                  type="button"
+                  onClick={() => {
+                    setActiveMediaType(mediaType);
+                    navigateToView("all-videos");
+                    setSelectedActor("");
+                    setActorVideosActor("");
+                    setSelectedGenre("");
+                    setSelectedRating(null);
+                    setSelectedMetadataGroup("");
+                    setSelectedVideo(null);
+                    setSelectedVideoPaths([]);
+                    setRightPanelMode("video");
+                    setIsRightPanelEditing(false);
+                  }}
+                >
+                  {mediaType === "video" ? "Video" : "Music"}
+                </button>
+              ))}
+            </div>
             <button
               className={activeView === "all-videos" ? "nav-item active" : "nav-item"}
               type="button"
@@ -6383,9 +6707,9 @@ function App() {
                 setIsRightPanelEditing(false);
               }}
             >
-              All Videos
+              {activeMediaType === "video" ? "All Videos" : "All Music"}
             </button>
-            {leftPanelTags.actors && (
+            {activeMediaType === "video" && leftPanelTags.actors && (
               <button
                 className={
                   activeView === "actors" ? "nav-item active" : "nav-item"
@@ -6411,13 +6735,13 @@ function App() {
                 Actors
               </button>
             )}
-            {([
-              ["directors", "Directors"],
-              ["years", "Years"],
-              ["publishers", "Publishers"],
-              ["writers", "Writers"],
-              ["subgenres", "Sub-genres"],
-            ] as const)
+            {((activeMediaType === "video"
+              ? [
+                  ["years", "Years"],
+                  ["subgenres", "Sub-genres"],
+                ]
+              : [["years", "Years"]]
+            ) as [keyof LeftPanelTags, string][])
               .filter(([view]) => leftPanelTags[view])
               .map(([view, label]) => (
                 <button
@@ -6448,7 +6772,7 @@ function App() {
                   {label}
                 </button>
               ))}
-            {leftPanelTags.genres && (
+            {activeMediaType === "video" && leftPanelTags.genres && (
               <button
                 className={
                   activeView === "genres" ? "nav-item active" : "nav-item"
@@ -6472,6 +6796,26 @@ function App() {
               >
                 Genres
               </button>
+            )}
+            {activeMediaType === "music" && (
+              <>
+                {(["artists", "albums"] as const).map((view) => (
+                  <button
+                    className={activeView === view ? "nav-item active" : "nav-item"}
+                    key={view}
+                    type="button"
+                    onClick={() => {
+                      navigateToView(view);
+                      setSelectedMetadataGroup("");
+                      setSelectedRating(null);
+                      setRightPanelMode("metadata");
+                      setIsRightPanelEditing(false);
+                    }}
+                  >
+                    {view === "artists" ? "Artists" : "Albums"}
+                  </button>
+                ))}
+              </>
             )}
             {leftPanelTags.ratings && (
               <button
@@ -6552,13 +6896,15 @@ function App() {
                 <div className="filter-controls">
                   {renderSearchFilterControl()}
                   <label htmlFor="filter-actor">
-                    Actor
+                    {activeMediaType === "music" ? "Artist" : "Actor"}
                     <select
                       id="filter-actor"
                       value={actorFilter}
                       onChange={(event) => setActorFilter(event.target.value)}
                     >
-                      <option value="all">All actors</option>
+                      <option value="all">
+                        {activeMediaType === "music" ? "All artists" : "All actors"}
+                      </option>
                       {actorFilterOptions().map((actor) => (
                         <option key={actor} value={actor}>
                           {actor}
@@ -6587,6 +6933,7 @@ function App() {
                       ))}
                     </div>
                   </details>
+                  {activeMediaType === "video" && (
                   <details className="multi-filter" ref={subGenreFilterRef}>
                     <summary>{subGenreFilterLabel()}</summary>
                     <div className="multi-filter-menu">
@@ -6610,6 +6957,7 @@ function App() {
                       ))}
                     </div>
                   </details>
+                  )}
                   <details className="multi-filter" ref={ratingFilterRef}>
                     <summary>{ratingFilterLabel()}</summary>
                     <div className="multi-filter-menu">
@@ -6739,6 +7087,9 @@ function App() {
           </section>
         </section>
       </section>
+      )}
+
+      {renderMinimizedPlayer()}
 
       {renderRefreshReportModal()}
       {renderStatisticsModal()}
@@ -6842,14 +7193,47 @@ function App() {
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
+          {contextMenu.videos.length === 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                openVideo(contextMenu.video.file_path);
+                setContextMenu(null);
+              }}
+            >
+              Play
+            </button>
+          )}
+          {selectedVideo && mediaTypeOf(selectedVideo) === "music" && (
+            <>
+              <div>
+                <label htmlFor="edit-artist">Artist</label>
+                <input id="edit-artist" value={editForm.artist} onChange={(event) => setEditForm((form) => ({ ...form, artist: event.target.value }))} />
+              </div>
+              <div>
+                <label htmlFor="edit-composer">Composer</label>
+                <input id="edit-composer" value={editForm.composer} onChange={(event) => setEditForm((form) => ({ ...form, composer: event.target.value }))} />
+              </div>
+              <div>
+                <label htmlFor="edit-album">Album</label>
+                <input id="edit-album" value={editForm.album} onChange={(event) => setEditForm((form) => ({ ...form, album: event.target.value }))} />
+              </div>
+              <div>
+                <label htmlFor="edit-track-number">Track number</label>
+                <input id="edit-track-number" value={editForm.track_number} onChange={(event) => setEditForm((form) => ({ ...form, track_number: event.target.value }))} />
+              </div>
+            </>
+          )}
           <button
             type="button"
             onClick={() => {
-              openVideo(contextMenu.video.file_path);
+              void openVideosInExternalPlayer(contextMenu.videos);
               setContextMenu(null);
             }}
           >
-            Open
+            {contextMenu.videos.length > 1
+              ? `Open in External Player (${contextMenu.videos.length})`
+              : "Open in External Player"}
           </button>
           <button
             type="button"

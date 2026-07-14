@@ -2,6 +2,13 @@ use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Argon2,
 };
+use lofty::{
+    file::TaggedFileExt,
+    picture::PictureType,
+    prelude::Accessor,
+    read_from_path,
+    tag::ItemKey,
+};
 use rand_core::OsRng;
 use rand_core::RngCore;
 #[cfg(target_os = "windows")]
@@ -286,6 +293,8 @@ fn default_secondary_sort_mode() -> String {
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 struct VideoFile {
+    #[serde(default = "default_video_media_type")]
+    media_type: String,
     filename: String,
     file_path: String,
     title: String,
@@ -315,11 +324,23 @@ struct VideoFile {
     filesize: u64,
     artwork_thumbnail: String,
     #[serde(default)]
+    artist: String,
+    #[serde(default)]
+    composer: String,
+    #[serde(default)]
+    album: String,
+    #[serde(default)]
+    track_number: String,
+    #[serde(default)]
     rating: u64,
     #[serde(default)]
     play_count: u64,
     #[serde(default)]
     added_at: String,
+}
+
+fn default_video_media_type() -> String {
+    "video".to_string()
 }
 
 #[derive(serde::Serialize)]
@@ -660,6 +681,12 @@ fn refresh_video_fields(
         &mut changes,
     );
     refresh_string_field(
+        "media_type",
+        &mut existing_video.media_type,
+        &scanned_video.media_type,
+        &mut changes,
+    );
+    refresh_string_field(
         "actor",
         &mut existing_video.actor,
         &scanned_video.actor,
@@ -693,6 +720,36 @@ fn refresh_video_fields(
         "date",
         &mut existing_video.date,
         &scanned_video.date,
+        &mut changes,
+    );
+    refresh_string_field(
+        "artist",
+        &mut existing_video.artist,
+        &scanned_video.artist,
+        &mut changes,
+    );
+    refresh_string_field(
+        "composer",
+        &mut existing_video.composer,
+        &scanned_video.composer,
+        &mut changes,
+    );
+    refresh_string_field(
+        "album",
+        &mut existing_video.album,
+        &scanned_video.album,
+        &mut changes,
+    );
+    refresh_string_field(
+        "track_number",
+        &mut existing_video.track_number,
+        &scanned_video.track_number,
+        &mut changes,
+    );
+    refresh_string_field(
+        "artwork_thumbnail",
+        &mut existing_video.artwork_thumbnail,
+        &scanned_video.artwork_thumbnail,
         &mut changes,
     );
     refresh_u64_field(
@@ -772,6 +829,15 @@ fn scan_folder(
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(is_supported_video_extension);
+        let is_supported_music = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(is_supported_music_extension);
+
+        if is_supported_music {
+            files.push(scan_music_file(app, &path)?);
+            continue;
+        }
 
         if is_supported_video {
             let filename = path
@@ -822,6 +888,7 @@ fn scan_folder(
             };
 
             files.push(VideoFile {
+                media_type: default_video_media_type(),
                 filename,
                 file_path: file_path.clone(),
                 title,
@@ -840,6 +907,10 @@ fn scan_folder(
                 bitrate: String::new(),
                 filesize: metadata.len(),
                 artwork_thumbnail,
+                artist: String::new(),
+                composer: String::new(),
+                album: String::new(),
+                track_number: String::new(),
                 rating,
                 play_count: 0,
                 added_at: current_timestamp(),
@@ -848,6 +919,103 @@ fn scan_folder(
     }
 
     Ok(())
+}
+
+fn scan_music_file(app: &tauri::AppHandle, path: &PathBuf) -> Result<VideoFile, String> {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Could not read music file metadata: {error}"))?;
+    let tagged_file = read_from_path(path).ok();
+    let tag = tagged_file
+        .as_ref()
+        .and_then(|file| file.primary_tag().or_else(|| file.first_tag()));
+    let string_tag = |value: Option<&str>| value.unwrap_or_default().trim().to_string();
+    let title = string_tag(tag.and_then(|tag| tag.title()).as_deref());
+    let artist = string_tag(tag.and_then(|tag| tag.artist()).as_deref());
+    let composer = string_tag(tag.and_then(|tag| tag.get_string(ItemKey::Composer)));
+    let album = string_tag(tag.and_then(|tag| tag.album()).as_deref());
+    let genre = string_tag(tag.and_then(|tag| tag.genre()).as_deref());
+    let date = string_tag(tag.and_then(|tag| {
+        tag.get_string(ItemKey::RecordingDate)
+            .or_else(|| tag.get_string(ItemKey::Year))
+    }));
+    let track_number = tag
+        .and_then(|tag| tag.track())
+        .map(|track| track.to_string())
+        .unwrap_or_default();
+    let file_path = path.to_string_lossy().to_string();
+    let artwork_thumbnail = music_artwork_path(app, &file_path, tag)?
+        .unwrap_or_else(|| file_path.clone());
+
+    Ok(VideoFile {
+        media_type: "music".to_string(),
+        filename: filename.clone(),
+        file_path,
+        title: if title.is_empty() { filename } else { title },
+        actor: String::new(),
+        director: String::new(),
+        publisher: String::new(),
+        writers: String::new(),
+        genre,
+        sub_genre: String::new(),
+        date,
+        backup_date: String::new(),
+        backup_location: String::new(),
+        notes: String::new(),
+        explicit_content: false,
+        resolution: String::new(),
+        bitrate: String::new(),
+        filesize: metadata.len(),
+        artwork_thumbnail,
+        artist,
+        composer,
+        album,
+        track_number,
+        rating: 0,
+        play_count: 0,
+        added_at: current_timestamp(),
+    })
+}
+
+fn music_artwork_path(
+    app: &tauri::AppHandle,
+    file_path: &str,
+    tag: Option<&lofty::tag::Tag>,
+) -> Result<Option<String>, String> {
+    let Some(tag) = tag else {
+        return Ok(None);
+    };
+    let picture = tag
+        .get_picture_type(PictureType::CoverFront)
+        .or_else(|| tag.pictures().first());
+    let Some(picture) = picture else {
+        return Ok(None);
+    };
+
+    let extension = picture
+        .mime_type()
+        .and_then(|mime_type| mime_type.ext())
+        .unwrap_or("img");
+    let mut hasher = DefaultHasher::new();
+    file_path.hash(&mut hasher);
+    let artwork_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not find app data folder: {error}"))?
+        .join("music-artwork")
+        .join(format!("{:x}.{extension}", hasher.finish()));
+
+    if let Some(parent) = artwork_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create music artwork folder: {error}"))?;
+    }
+    fs::write(&artwork_path, picture.data())
+        .map_err(|error| format!("Could not save embedded music artwork: {error}"))?;
+    Ok(Some(artwork_path.to_string_lossy().to_string()))
 }
 
 fn read_freeform_tag(tag: &mp4ameta::Tag, name: &'static str) -> Option<String> {
@@ -881,6 +1049,13 @@ fn is_supported_video_extension(extension: &str) -> bool {
     )
 }
 
+fn is_supported_music_extension(extension: &str) -> bool {
+    matches!(
+        extension.to_lowercase().as_str(),
+        "mp3" | "m4a" | "aac" | "flac" | "ogg" | "opus" | "wav"
+    )
+}
+
 fn is_supported_mp4_tag_extension(file_path: &str) -> bool {
     PathBuf::from(file_path)
         .extension()
@@ -894,6 +1069,11 @@ fn open_video_file(app: tauri::AppHandle, file_path: String) -> Result<u64, Stri
         .open_path(&file_path, None::<&str>)
         .map_err(|error| format!("Could not open video file: {error}"))?;
 
+    increment_play_count(&app, &file_path)
+}
+
+#[tauri::command]
+fn record_video_watch(app: tauri::AppHandle, file_path: String) -> Result<u64, String> {
     increment_play_count(&app, &file_path)
 }
 
@@ -1868,6 +2048,7 @@ pub fn run() {
             update_multiple_video_metadata,
             update_video_technical_metadata,
             open_video_file,
+            record_video_watch,
             open_video_file_incognito,
             open_video_directory,
             update_video_file_actor_tags,
@@ -2427,6 +2608,10 @@ fn normalize_database(database: &mut VideoDatabase) -> bool {
 
     let timestamp = current_timestamp();
     for video in &mut database.videos {
+        if video.media_type.trim().is_empty() {
+            video.media_type = default_video_media_type();
+            changed = true;
+        }
         if video.added_at.trim().is_empty() {
             video.added_at = timestamp.clone();
             changed = true;
@@ -2454,6 +2639,7 @@ fn save_database(app: &tauri::AppHandle, database: &VideoDatabase) -> Result<(),
             .videos
             .iter()
             .map(|video| VideoFile {
+                media_type: video.media_type.clone(),
                 filename: video.filename.clone(),
                 file_path: video.file_path.clone(),
                 title: video.title.clone(),
@@ -2472,6 +2658,10 @@ fn save_database(app: &tauri::AppHandle, database: &VideoDatabase) -> Result<(),
                 bitrate: video.bitrate.clone(),
                 filesize: video.filesize,
                 artwork_thumbnail: video.artwork_thumbnail.clone(),
+                artist: video.artist.clone(),
+                composer: video.composer.clone(),
+                album: video.album.clone(),
+                track_number: video.track_number.clone(),
                 rating: video.rating,
                 play_count: video.play_count,
                 added_at: video.added_at.clone(),
@@ -2587,6 +2777,10 @@ fn update_video_metadata(
     explicit_content: bool,
     rating: u64,
     play_count: u64,
+    artist: String,
+    composer: String,
+    album: String,
+    track_number: String,
 ) -> Result<VideoFile, String> {
     let path = database_path(&app)?;
 
@@ -2622,7 +2816,12 @@ fn update_video_metadata(
         video.explicit_content = explicit_content;
         video.rating = rating.min(10);
         video.play_count = play_count;
+        video.artist = artist;
+        video.composer = composer;
+        video.album = album;
+        video.track_number = track_number;
         VideoFile {
+            media_type: video.media_type.clone(),
             filename: video.filename.clone(),
             file_path: video.file_path.clone(),
             title: video.title.clone(),
@@ -2641,6 +2840,10 @@ fn update_video_metadata(
             bitrate: video.bitrate.clone(),
             filesize: video.filesize,
             artwork_thumbnail: video.artwork_thumbnail.clone(),
+            artist: video.artist.clone(),
+            composer: video.composer.clone(),
+            album: video.album.clone(),
+            track_number: video.track_number.clone(),
             rating: video.rating,
             play_count: video.play_count,
             added_at: video.added_at.clone(),
@@ -2670,6 +2873,10 @@ fn update_multiple_video_metadata(
     explicit_content: Option<bool>,
     rating: Option<u64>,
     play_count: Option<u64>,
+    artist: Option<String>,
+    composer: Option<String>,
+    album: Option<String>,
+    track_number: Option<String>,
 ) -> Result<Vec<VideoFile>, String> {
     let path = database_path(&app)?;
 
@@ -2743,6 +2950,19 @@ fn update_multiple_video_metadata(
 
         if let Some(play_count) = play_count {
             video.play_count = play_count;
+        }
+
+        if let Some(artist) = &artist {
+            video.artist = artist.clone();
+        }
+        if let Some(composer) = &composer {
+            video.composer = composer.clone();
+        }
+        if let Some(album) = &album {
+            video.album = album.clone();
+        }
+        if let Some(track_number) = &track_number {
+            video.track_number = track_number.clone();
         }
 
         updated_videos.push(video.clone());
